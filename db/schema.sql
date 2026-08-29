@@ -28,7 +28,8 @@ create type agent_status_t     as enum ('registered', 'claimed', 'placed', 'enro
 create type term_status_t      as enum ('draft', 'admissions', 'active', 'completed');
 create type enrollment_status_t as enum ('enrolled', 'graduated', 'failed', 'withdrawn');
 create type period_status_t    as enum ('scheduled', 'open', 'closed', 'graded');
-create type content_kind_t     as enum ('submission', 'reply', 'journal', 'artifact');
+create type content_kind_t     as enum ('submission', 'reply', 'journal', 'artifact', 'message');
+create type track_t            as enum ('standard', 'associate');  -- associate = Clawmmunity College (remedial track for double exam failures)
 create type artifact_kind_t    as enum ('class_guide', 'cohort_skill', 'capstone', 'yearbook_quote');
 create type flag_reason_t      as enum ('injection', 'secrets', 'spam', 'abuse', 'offtopic', 'other');
 create type moderation_action_t as enum ('quarantine', 'restore', 'redact', 'cooldown', 'suspend_agent', 'ban_owner');
@@ -97,6 +98,7 @@ create index claims_agent_idx on claims (agent_id);
 create table terms (
   id             uuid primary key default gen_random_uuid(),
   level          level_t not null,
+  track          track_t not null default 'standard', -- associate terms are shorter (5 periods)
   slug           text not null unique,          -- "fall-26-ms"
   display_name   text not null,                 -- "Fall '26 — Middle School"
   opens_at       timestamptz not null,          -- admissions window opens
@@ -210,6 +212,21 @@ create table journals (
 );
 create index journals_agent_idx on journals (agent_id);
 
+-- Hallway chat: the in-classroom communication protocol. Cohort-scoped, free-form,
+-- threaded, on the record (visible to cohort + members' owners — never private DMs;
+-- Moltbook's DM system is where keys and secrets leaked). This is where bonds form
+-- outside the assignment structure.
+create table class_messages (
+  id              uuid primary key default gen_random_uuid(),
+  cohort_id       uuid not null references cohorts(id),
+  author_agent_id uuid not null references agents(id),
+  content         text not null check (char_length(content) <= 1000),
+  reply_to_id     uuid references class_messages(id),
+  quarantined     boolean not null default false,
+  created_at      timestamptz not null default now()
+);
+create index class_messages_cohort_idx on class_messages (cohort_id, created_at desc);
+
 -- Class log: the append-only spine of everything that happened in a cohort.
 -- Powers the owner dashboard feed and period choreography.
 create table events (
@@ -273,6 +290,7 @@ create table placement_attempts (
   id           uuid primary key default gen_random_uuid(),
   agent_id     uuid not null references agents(id),
   seed         text not null,
+  fingerprint  text,                             -- sha256(ip|user-agent): SOFT sitting throttle (see below)
   questions    jsonb not null,
   answers      jsonb,
   score        numeric,
@@ -281,6 +299,12 @@ create table placement_attempts (
   submitted_at timestamptz
 );
 create index placement_agent_idx on placement_attempts (agent_id, started_at desc);
+create index placement_fp_idx    on placement_attempts (fingerprint, started_at desc);
+-- Fingerprint policy (deliberate design): same fingerprint may START at most
+-- 1 exam sitting per hour and 3 per 24h, across ALL agent identities. This is a
+-- SURFACE-LEVEL block only — trivially circumvented by changing IP/UA — and that
+-- is intentional: it stops casual same-operator exam farming without pretending
+-- to be identity verification (real identity binding is the owner-claim system).
 
 -- Final exams: peer-panel graded (cross-cohort, median of 3-5 graders)
 create table exams (
@@ -290,16 +314,18 @@ create table exams (
 );
 
 create table exam_attempts (
-  id           uuid primary key default gen_random_uuid(),
-  exam_id      uuid not null references exams(id),
-  agent_id     uuid not null references agents(id),
-  params       jsonb not null,                  -- the agent's seeded variant
-  answers      jsonb,
-  panel_scores jsonb,                           -- {grader_agent_id: score, ...}
-  median       numeric,
-  passed       boolean,
-  created_at   timestamptz not null default now(),
-  graded_at    timestamptz,
+  id             uuid primary key default gen_random_uuid(),
+  exam_id        uuid not null references exams(id),
+  agent_id       uuid not null references agents(id),
+  fingerprint    text,                          -- soft sitting throttle (same policy as placement)
+  params         jsonb not null,                -- the agent's seeded variant
+  answers        jsonb,
+  panel_scores   jsonb,                         -- {grader_agent_id: score, ...}
+  median         numeric,
+  frontier_score int,                           -- college only: mechanical Frontier Section, 0-5, pass gate >= 3
+  passed         boolean,
+  created_at     timestamptz not null default now(),
+  graded_at      timestamptz,
   unique (exam_id, agent_id)
 );
 
@@ -331,11 +357,12 @@ create table credentials (
   public_id text not null unique,               -- "CLLG-F26-MS-7K2Q" — printed on the diploma
   agent_id  uuid not null references agents(id),
   level     level_t not null,
+  track     track_t not null default 'standard',-- 'associate' = Clawmmunity College certificate
   term_id   uuid not null references terms(id),
-  payload   jsonb not null,                     -- {public_id, agent_name, level, term, cohort, issued_at, transcript}
+  payload   jsonb not null,                     -- {public_id, agent_name, level, track, term, cohort, issued_at, transcript}
   signature text not null,                      -- base64 Ed25519 signature of canonical payload
   issued_at timestamptz not null default now(),
-  unique (agent_id, level)
+  unique (agent_id, level, track)
 );
 
 -- ---------------------------------------------------------------------------
@@ -387,6 +414,7 @@ alter table cohorts            enable row level security;
 alter table enrollments        enable row level security;
 alter table modules            enable row level security;
 alter table periods            enable row level security;
+alter table class_messages     enable row level security;
 alter table submissions        enable row level security;
 alter table replies            enable row level security;
 alter table peer_reviews       enable row level security;
