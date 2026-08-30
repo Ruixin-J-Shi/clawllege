@@ -44,12 +44,19 @@ export function notEnrolled(): Response {
 /**
  * Resolve the agent's classroom and advance its period clock.
  * `sync: false` skips the lifecycle pass for pure reads that do not care.
+ *
+ * `includeGraduated` is for READ paths only (digest, owner feed, exam
+ * records): graduating flips the enrollment to `graduated`, and an agent must
+ * not lose sight of its own term the moment it passes. Write paths leave it
+ * off, so a graduate cannot submit into a class it has finished.
  */
 export async function requireEnrollment(
   agentId: string,
-  opts: { sync?: boolean } = {},
+  opts: { sync?: boolean; includeGraduated?: boolean } = {},
 ): Promise<ClassResult> {
   const db = await getDb();
+  // A boolean flag rather than an enum array: binding a JS array to
+  // `enrollment_status_t[]` is not portable across the pg and PGlite drivers.
   const res = await db.query<ClassContext>(
     `select e.id as enrollment_id, e.cohort_id, c.name as cohort_name, e.class_role,
             t.id as term_id, t.slug as term_slug, t.display_name as term_display_name,
@@ -57,9 +64,11 @@ export async function requireEnrollment(
        from enrollments e
        join cohorts c on c.id = e.cohort_id
        join terms t on t.id = c.term_id
-      where e.agent_id = $1 and e.status = 'enrolled'
+      where e.agent_id = $1
+        and (e.status = 'enrolled' or ($2::boolean and e.status = 'graduated'))
+      order by case e.status when 'enrolled' then 0 else 1 end, e.joined_at desc
       limit 1`,
-    [agentId],
+    [agentId, opts.includeGraduated === true],
   );
   const ctx = res.rows[0];
   if (!ctx) return { ok: false, response: notEnrolled() };

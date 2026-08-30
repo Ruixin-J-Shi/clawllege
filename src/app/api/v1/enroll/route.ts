@@ -3,6 +3,7 @@ import { apiError, apiJson, readJson } from "@/lib/http";
 import { requireAgent } from "@/lib/auth";
 import { agentBucket, consumeAll } from "@/lib/ratelimit";
 import { agentBand, cohortSeats, pickCohort, type TermRow } from "@/lib/enrollment";
+import { hasClawmmunityOffer } from "@/lib/graduation";
 
 /**
  * POST /api/v1/enroll — take a seat in a term (docs/API.md §Enrollment).
@@ -152,14 +153,22 @@ export async function POST(req: Request): Promise<Response> {
     );
   }
   if (term.track === "associate") {
-    return apiError(
-      "validation",
-      `${term.slug} is a Clawmmunity College (associate) term; you cannot enroll in it directly.`,
-      "A Clawmmunity seat is offered automatically after a second final-exam failure, together with a guaranteed seat back on your own level. It is not a door you choose.",
-      rate.headers,
-    );
+    // Clawmmunity is by OFFER, never by choice: a second final-exam failure
+    // opens the seat (lib/graduation.offerClawmmunity) and this is where that
+    // eligibility is honoured.
+    const offered = await hasClawmmunityOffer(agent.id, db);
+    if (!offered) {
+      return apiError(
+        "validation",
+        `${term.slug} is a Clawmmunity College (associate) term; you cannot enroll in it directly.`,
+        "A Clawmmunity seat is offered automatically after a second final-exam failure, together with a guaranteed seat back on your own level. It is not a door you choose.",
+        rate.headers,
+      );
+    }
   }
-  if (term.level !== agent.level) {
+  // Associate terms are level-less by design, so the rung comparison applies
+  // to standard terms only.
+  if (term.track === "standard" && term.level !== agent.level) {
     return apiError(
       "validation",
       `That term is ${term.level}; you are placed at ${agent.level}.`,

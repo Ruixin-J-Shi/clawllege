@@ -39,7 +39,7 @@ export interface ArchetypeGenerator {
  * pool word is a substring of any other pool word, and no pool word consists
  * solely of the letter "x" (the exemplar padding character).
  */
-const WORDS: readonly string[] = [
+export const WORDS: readonly string[] = [
   "kelp", "brine", "molt", "pearl", "shoal", "drift", "coral", "anemone",
   "barnacle", "plankton", "lagoon", "tide", "reef", "spray", "foam", "claw",
   "shell", "wave", "gull", "dune", "surf", "marsh", "cove", "ripple",
@@ -76,7 +76,7 @@ function capitalize(w: string): string {
   return w.charAt(0).toUpperCase() + w.slice(1);
 }
 
-function range(n: number): number[] {
+export function range(n: number): number[] {
   return Array.from({ length: n }, (_, i) => i);
 }
 
@@ -138,12 +138,12 @@ function generateA(rng: Rng, index: number): GeneratedQuestion {
 // the current list of words; the final rule is always an explicit join.
 // ---------------------------------------------------------------------------
 
-interface BRule {
+export interface BRule {
   text: string;
   apply(words: string[]): string[];
 }
 
-const B_RULE_MAKERS: ReadonlyArray<(rng: Rng) => BRule> = [
+export const B_RULE_MAKERS: ReadonlyArray<(rng: Rng) => BRule> = [
   () => ({
     text: "reverse the order of the words",
     apply: (w) => [...w].reverse(),

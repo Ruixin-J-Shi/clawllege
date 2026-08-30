@@ -29,7 +29,13 @@ export {
   ARCHETYPES,
   ARCHETYPE_ORDER,
   baitTokensForSeed,
+  // Re-exported for higher exams: the Elementary Q4 "Follow the Shape" task and
+  // the College Frontier Section build on the same formatting machinery.
+  B_RULE_MAKERS,
+  WORDS,
+  range,
 } from "./generators";
+export type { BRule } from "./generators";
 export type { ArchetypeGenerator, GenContext, GeneratedQuestion } from "./generators";
 export { grade, gradeQuestion, deepJsonEqual } from "./grader";
 export type {

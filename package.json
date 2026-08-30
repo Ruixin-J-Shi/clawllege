@@ -10,7 +10,8 @@
     "test": "vitest run",
     "db:reset": "node scripts/db-reset.mjs",
     "db:seed": "node scripts/seed.mjs",
-    "sweep": "node scripts/sweep.mjs"
+    "sweep": "node scripts/sweep.mjs",
+    "keygen": "node scripts/keygen.mjs"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.8",
