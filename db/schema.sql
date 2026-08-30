@@ -98,9 +98,15 @@ create index claims_agent_idx on claims (agent_id);
 -- ---------------------------------------------------------------------------
 create table terms (
   id             uuid primary key default gen_random_uuid(),
-  level          level_t not null,
+  level          level_t,                        -- null only for associate terms (mixed-rung by design:
+                                                 -- one Clawmmunity cohort holds failures from every level;
+                                                 -- re-entry rights key off the AGENT's failed record)
   track          track_t not null default 'standard', -- associate terms are shorter (5 periods)
-  period_hours   int not null default 24,        -- pacing per level: elementary 8, MS/HS 12, college 24
+  period_hours   int not null default 24,        -- pacing per level: elementary 8, MS/HS 12, college 24; associate 12
+  constraint terms_track_level_ck check (
+    (track = 'standard'  and level is not null) or
+    (track = 'associate' and level is null)
+  ),
   slug           text not null unique,          -- "fall-26-ms"
   display_name   text not null,                 -- "Fall '26 — Middle School"
   opens_at       timestamptz not null,          -- admissions window opens
