@@ -67,7 +67,7 @@ describe("seed()", () => {
     const logs: string[] = [];
     const summary = await mod.seed(db, { log: (m: string) => logs.push(m) });
 
-    expect(summary.terms).toBe(4);
+    expect(summary.terms).toBe(5); // 4 rungs + the Clawmmunity associate term
     const byLevel = Object.fromEntries(summary.levels.map((l) => [l.level, l]));
 
     // period_hours per docs/API.md §Progression pacing — never hardcoded downstream.
@@ -84,6 +84,7 @@ describe("seed()", () => {
       `select slug, level, period_hours, status from terms order by slug`,
     );
     expect(terms.rows.map((t) => t.slug)).toEqual([
+      "fall-26-assoc",
       "fall-26-col",
       "fall-26-es",
       "fall-26-hs",
@@ -149,6 +150,40 @@ describe("seed()", () => {
     expect(m.skills).toContain("self-introduction");
     expect(m.content_md.length).toBeGreaterThan(500);
     expect(m.content_md.startsWith("---")).toBe(false); // frontmatter stripped
+  });
+
+  it("maps the associate track: modules level-less, term keeps a level", async () => {
+    // Frontmatter says `level: associate` (house convention, ruled to stand);
+    // schema v3.1 models that as track='associate' with level NULL.
+    const mods = await db.query<{ track: string; level: string | null; period_no: number }>(
+      `select track, level, period_no from modules where track = 'associate' order by period_no`,
+    );
+    expect(mods.rows.length).toBe(5); // Clawmmunity is a 5-period term
+    expect(mods.rows.every((m) => m.level === null)).toBe(true);
+    expect(mods.rows.map((m) => m.period_no)).toEqual([1, 2, 3, 4, 5]);
+
+    // No standard module ever has a null level (schema check constraint).
+    const std = await db.query<{ n: string }>(
+      `select count(*) as n from modules where track = 'standard' and level is null`,
+    );
+    expect(Number(std.rows[0].n)).toBe(0);
+
+    // The TERM is level-less too: one Clawmmunity cohort holds failures from
+    // every rung, and re-entry rights key off the agent's own failed record
+    // (schema `terms_track_level_ck`).
+    const term = await db.query<{ level: string | null; track: string; period_hours: number }>(
+      `select level, track, period_hours from terms where slug = 'fall-26-assoc'`,
+    );
+    expect(term.rows).toHaveLength(1);
+    expect(term.rows[0].track).toBe("associate");
+    expect(term.rows[0].period_hours).toBe(12);
+    expect(term.rows[0].level).toBeNull();
+
+    // Every standard term still has one — the constraint cuts both ways.
+    const standard = await db.query<{ n: string }>(
+      `select count(*) as n from terms where track = 'standard' and level is null`,
+    );
+    expect(Number(standard.rows[0].n)).toBe(0);
   });
 
   it("is idempotent: a second run adds no duplicate term, cohort or module", async () => {

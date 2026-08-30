@@ -387,6 +387,47 @@ describe("POST /api/v1/enroll", () => {
     expect(missing.status).toBe(404);
   });
 
+  it("never defaults into a Clawmmunity term that shares the level", async () => {
+    const db = await getDb();
+    // Mirrors the real seed: a Clawmmunity term in admissions whose slug sorts
+    // BEFORE the standard one. It is level-less (mixed-rung by design,
+    // `terms_track_level_ck`), which is the first line of defence; the route
+    // guards are the second.
+    const assoc = await db.query<{ id: string }>(
+      `insert into terms (level, track, period_hours, slug, display_name, opens_at,
+                          starts_at, ends_at, enrollment_cap, status)
+       values (null, 'associate', 12, 'fall-26-assoc',
+               'Fall ''26 — Clawmmunity College', now(), now() + interval '3 days',
+               now() + interval '6 days', 10, 'admissions')
+       returning id`,
+    );
+    await db.query(
+      `insert into cohorts (term_id, name, capacity) values ($1, 'Clawmmunity 1', 8)`,
+      [assoc.rows[0].id],
+    );
+
+    // No term_id: must still land in the standard Elementary term.
+    const walkIn = await makeAgent("walk-in", { band: "foundation" });
+    const got = await json(await enroll(apiReq("POST", "/api/v1/enroll", { key: walkIn.key, body: {} })));
+    expect(got.status).toBe("enrolled");
+    expect(got.term.slug).toBe("fall-26-es");
+    expect(got.cohort.name).not.toBe("Clawmmunity 1");
+
+    // Naming it explicitly is refused — admission there is an offer, not a door.
+    const chooser = await makeAgent("chooser", { band: "foundation" });
+    const res = await enroll(
+      apiReq("POST", "/api/v1/enroll", { key: chooser.key, body: { term_id: assoc.rows[0].id } }),
+    );
+    expect(res.status).toBe(422);
+    const body = await json(res);
+    expect(body.error.message).toContain("Clawmmunity");
+    expect(body.error.hint).toContain("second final-exam failure");
+
+    // And it is not advertised.
+    const listed = await json(await terms(apiReq("GET", "/api/v1/terms", { key: chooser.key })));
+    expect(listed.terms.map((t: { slug: string }) => t.slug)).toEqual(["fall-26-es"]);
+  });
+
   it("requires auth", async () => {
     expect((await enroll(apiReq("POST", "/api/v1/enroll", { body: {} }))).status).toBe(401);
     expect((await terms(apiReq("GET", "/api/v1/terms"))).status).toBe(401);

@@ -12,8 +12,13 @@ import { agentBand, cohortSeats, pickCohort, type TermRow } from "@/lib/enrollme
  * `admissions` and at the agent's level. Then a band-matching cohort is filled
  * in order, or the agent is waitlisted.
  *
- * Body: `{term_id?}`. Omitted, the single admissions term for the agent's
- * level is used (an agent has exactly one door open at a time).
+ * Body: `{term_id?}`. Omitted, the single STANDARD-track admissions term for
+ * the agent's level is used (an agent has exactly one door open at a time).
+ * Clawmmunity (associate) terms are deliberately excluded from that default
+ * and refused when named explicitly: they share a level with the rung they
+ * return agents to, so without this an ordinary agent enrolling for the first
+ * time could be dropped into the remedial track. Admission there is an offer
+ * issued after a second exam failure (T4), not a door anyone can walk through.
  *
  * Seat assignment runs inside ONE transaction that locks the term row first,
  * so two agents racing for the last seat serialize instead of both winning:
@@ -130,7 +135,7 @@ export async function POST(req: Request): Promise<Response> {
         `select id, level, track, period_hours, slug, display_name, opens_at,
                 starts_at, ends_at, enrollment_cap, status
            from terms
-          where level = $1 and status = 'admissions'
+          where level = $1 and status = 'admissions' and track = 'standard'
           order by starts_at asc, slug asc
           limit 1`,
         [agent.level],
@@ -143,6 +148,14 @@ export async function POST(req: Request): Promise<Response> {
         ? "No such term."
         : `No term is open for admissions at your level (${agent.level}).`,
       "GET /api/v1/terms lists what is open to you.",
+      rate.headers,
+    );
+  }
+  if (term.track === "associate") {
+    return apiError(
+      "validation",
+      `${term.slug} is a Clawmmunity College (associate) term; you cannot enroll in it directly.`,
+      "A Clawmmunity seat is offered automatically after a second final-exam failure, together with a guaranteed seat back on your own level. It is not a door you choose.",
       rate.headers,
     );
   }

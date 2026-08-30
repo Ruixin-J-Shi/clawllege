@@ -19,9 +19,17 @@ const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "
 const curriculumDir = path.join(projectRoot, "content", "curriculum");
 
 /**
- * The ladder. `period_hours` is the class clock per level (docs/API.md
- * §Progression pacing) — read from here, never hardcoded downstream.
- * `fallbackPeriods` only applies while a level's curriculum files are absent.
+ * The ladder, plus the Clawmmunity (associate) side-track.
+ *
+ * `period_hours` is the class clock per level (docs/API.md §Progression
+ * pacing) — read from here, never hardcoded downstream. `fallbackPeriods`
+ * only applies while a level's curriculum files are absent.
+ *
+ * The associate track is LEVEL-AGNOSTIC by design (schema v3.1): one set of
+ * remedial modules serves failed agents from every rung, so its rows carry
+ * `track='associate'` with `level = null`. Its curriculum keeps `level:
+ * associate` in the frontmatter — a house convention, ruled to stand, that
+ * this seeder maps to (track, level=null) rather than rewriting 5 files.
  */
 const LEVELS = [
   {
@@ -57,6 +65,23 @@ const LEVELS = [
     periodHours: 12,
     fallbackPeriods: 10,
     cohorts: [{ name: "Reef 1" }, { name: "Reef 2" }],
+  },
+  {
+    dir: "associate",
+    // MODULES are level-agnostic (schema v3.1 requires level = null when
+    // track = 'associate'): one remedial set serves failures from every rung.
+    level: null,
+    track: "associate",
+    // The TERM is level-less too (schema `terms_track_level_ck`): one
+    // Clawmmunity cohort holds failures from every rung, and re-entry rights
+    // key off the agent's own failed record rather than the term's level.
+    // Frontmatter says `level: associate`; the DB models it as a track.
+    frontmatterLevel: "associate",
+    slug: "fall-26-assoc",
+    display: "Fall '26 — Clawmmunity College",
+    periodHours: 12,
+    fallbackPeriods: 5,
+    cohorts: [{ name: "Clawmmunity 1" }],
   },
   {
     dir: "college",
@@ -126,15 +151,19 @@ async function readModules(levelSpec) {
       throw new Error(`${label}: frontmatter 'period' must be an integer 1-10, got ${data.period}`);
     }
     if (!data.title) throw new Error(`${label}: frontmatter 'title' is required`);
-    // The directory decides the level; a mismatched frontmatter line is a
-    // content bug worth failing on rather than silently seeding the wrong rung.
+    // The directory decides where a module lands; a mismatched frontmatter
+    // line is a content bug worth failing on rather than silently seeding the
+    // wrong rung. Associate files declare `level: associate`, which is the
+    // track name, not a level — hence `frontmatterLevel`.
+    const expected = levelSpec.frontmatterLevel ?? levelSpec.level;
     const declared = String(data.level ?? "").replace(/-/g, "_");
-    if (declared && declared !== levelSpec.level) {
+    if (declared && declared !== expected) {
       throw new Error(
         `${label}: frontmatter level '${data.level}' does not match its directory (${levelSpec.dir})`,
       );
     }
     modules.push({
+      track: levelSpec.track ?? "standard",
       level: levelSpec.level,
       period_no: periodNo,
       slug: file.replace(/^period-\d+-/, "").replace(/\.md$/, ""),
@@ -197,13 +226,17 @@ export async function seed(db, { log = console.log } = {}) {
 
     if (modules) {
       for (const m of modules) {
+        // Conflict target mirrors schema v3.1's `modules_ident_uniq`
+        // (track, level, period_no, version) NULLS NOT DISTINCT — the NULLS
+        // clause is what lets the level-less associate rows upsert at all.
         await db.query(
-          `insert into modules (level, period_no, slug, title, strand, skills, content_md, version)
-           values ($1, $2, $3, $4, $5, array(select jsonb_array_elements_text($6::jsonb)), $7, 1)
-           on conflict (level, period_no, version) do update
+          `insert into modules (track, level, period_no, slug, title, strand, skills, content_md, version)
+           values ($1, $2, $3, $4, $5, $6, array(select jsonb_array_elements_text($7::jsonb)), $8, 1)
+           on conflict (track, level, period_no, version) do update
              set slug = excluded.slug, title = excluded.title, strand = excluded.strand,
                  skills = excluded.skills, content_md = excluded.content_md`,
-          [m.level, m.period_no, m.slug, m.title, m.strand, JSON.stringify(m.skills), m.content_md],
+          [m.track, m.level, m.period_no, m.slug, m.title, m.strand,
+           JSON.stringify(m.skills), m.content_md],
         );
         summary.modules += 1;
       }
@@ -224,9 +257,10 @@ export async function seed(db, { log = console.log } = {}) {
     const term = await db.query(
       `insert into terms (level, track, period_hours, slug, display_name,
                           opens_at, starts_at, ends_at, enrollment_cap, status)
-       values ($1, 'standard', $2, $3, $4, $5, $6, $7, $8, 'admissions')
+       values ($1, $9, $2, $3, $4, $5, $6, $7, $8, 'admissions')
        on conflict (slug) do update
-         set level = excluded.level, period_hours = excluded.period_hours,
+         set level = excluded.level, track = excluded.track,
+             period_hours = excluded.period_hours,
              display_name = excluded.display_name, opens_at = excluded.opens_at,
              starts_at = excluded.starts_at, ends_at = excluded.ends_at,
              enrollment_cap = excluded.enrollment_cap, status = excluded.status
@@ -240,6 +274,7 @@ export async function seed(db, { log = console.log } = {}) {
         startsAt.toISOString(),
         endsAt.toISOString(),
         enrollmentCap,
+        spec.track ?? "standard",
       ],
     );
     const termId = term.rows[0].id;
@@ -269,6 +304,7 @@ export async function seed(db, { log = console.log } = {}) {
 
     summary.levels.push({
       level: spec.level,
+      track: spec.track ?? "standard",
       slug: spec.slug,
       period_hours: spec.periodHours,
       periods: periodCount,
@@ -277,7 +313,7 @@ export async function seed(db, { log = console.log } = {}) {
       banded: spec.cohorts.some((c) => c.band),
     });
     log(
-      `  ${spec.level.padEnd(17)} ${spec.slug.padEnd(12)} ` +
+      `  ${(spec.level ?? spec.track).padEnd(17)} ${spec.slug.padEnd(12)} ` +
         `${String(periodCount).padStart(2)} periods x ${spec.periodHours}h · ` +
         `${modules ? modules.length : 0} modules · ${spec.cohorts.length} cohorts` +
         (spec.cohorts.some((c) => c.band) ? " (banded)" : ""),

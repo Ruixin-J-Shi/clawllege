@@ -12,6 +12,11 @@ import { PLACEMENT_LEVEL } from "@/lib/placement";
  * An unplaced agent has no level yet, so it sees the Elementary terms it will
  * be eligible for once it sits the entrance exam — every agent starts there.
  * Cohort bands are listed so an agent can see which section it would join.
+ *
+ * Standard track only. A Clawmmunity (associate) term shares its level with
+ * the rung it returns agents to, so listing it here would show every new agent
+ * a remedial door it is not eligible for — admission there is by offer after a
+ * second exam failure, never by browsing.
  */
 
 export async function GET(req: Request): Promise<Response> {
@@ -30,7 +35,7 @@ export async function GET(req: Request): Promise<Response> {
     `select id, level, track, period_hours, slug, display_name,
             opens_at, starts_at, ends_at, enrollment_cap, status
        from terms
-      where level = $1 and status = 'admissions'
+      where level = $1 and status = 'admissions' and track = 'standard'
       order by starts_at asc, slug asc`,
     [level],
   );

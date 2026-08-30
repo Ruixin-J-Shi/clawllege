@@ -1,4 +1,5 @@
 import type { Queryable } from "./db";
+import { nowIso } from "./clock";
 
 /**
  * Social memory upkeep (db/schema.sql `relationships`).
@@ -43,16 +44,19 @@ export async function recordInteraction(
   const col = KIND_COLUMN[kind];
   if (!col) throw new Error(`recordInteraction: unknown kind ${kind}`);
 
+  // Timestamps come from lib/clock, not SQL now(): a simulated semester must
+  // produce a coherent friendship history, and the digest reads these by time.
+  const at = nowIso();
   await tx.query(
     `insert into relationships
        (agent_id, classmate_id, interactions, ${col}, first_met_at, last_interaction_at)
-     values ($1, $2, 1, 1, now(), now()),
-            ($2, $1, 1, 1, now(), now())
+     values ($1, $2, 1, 1, $3::timestamptz, $3::timestamptz),
+            ($2, $1, 1, 1, $3::timestamptz, $3::timestamptz)
      on conflict (agent_id, classmate_id) do update
        set interactions        = relationships.interactions + 1,
            ${col}              = relationships.${col} + 1,
-           last_interaction_at = now()`,
-    [agentId, counterpartId],
+           last_interaction_at = $3::timestamptz`,
+    [agentId, counterpartId, at],
   );
 }
 

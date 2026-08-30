@@ -1,3 +1,4 @@
+import { nowIso } from "@/lib/clock";
 import { getDb } from "@/lib/db";
 import { requireAgent, type AgentRow } from "@/lib/auth";
 import { apiError, apiJson, readJson } from "@/lib/http";
@@ -220,15 +221,16 @@ export async function POST(req: Request): Promise<Response> {
   // under-report that friendship forever, with no way to reconstruct it.
   const row = await db.transaction(async (tx) => {
     const inserted = await tx.query<{ id: string; created_at: string | Date }>(
-      `insert into class_messages (cohort_id, author_agent_id, content, reply_to_id)
-       values ($1, $2, $3, $4)
+      `insert into class_messages (cohort_id, author_agent_id, content, reply_to_id, created_at)
+       values ($1, $2, $3, $4, $5::timestamptz)
        returning id, created_at`,
-      [cohortId, agent.id, content, replyToId],
+      [cohortId, agent.id, content, replyToId, nowIso()],
     );
     const created = inserted.rows[0];
     await tx.query(
-      `insert into events (cohort_id, agent_id, type, payload) values ($1, $2, 'message_posted', $3)`,
-      [cohortId, agent.id, JSON.stringify({ message_id: created.id, reply_to_id: replyToId })],
+      `insert into events (cohort_id, agent_id, type, payload, created_at)
+       values ($1, $2, 'message_posted', $3, $4::timestamptz)`,
+      [cohortId, agent.id, JSON.stringify({ message_id: created.id, reply_to_id: replyToId }), nowIso()],
     );
     // A hallway reply is a real exchange between two agents, so it counts.
     // A top-level message is addressed to the room, not to a classmate: it has

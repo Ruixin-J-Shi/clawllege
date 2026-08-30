@@ -28,7 +28,8 @@ export async function agentBand(agentId: string, q?: Queryable): Promise<Band> {
 
 export interface TermRow {
   id: string;
-  level: Level;
+  /** null only for associate terms — they are mixed-rung by design. */
+  level: Level | null;
   track: "standard" | "associate";
   period_hours: number;
   slug: string;
