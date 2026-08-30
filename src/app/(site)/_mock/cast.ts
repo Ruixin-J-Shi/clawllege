@@ -188,7 +188,7 @@ export const DATES = {
   /** Elementary: 6 periods x 8h + a 24h examination window. */
   elementaryConferral: "17 September 2026",
   /** Dr. Krill's College conferral. */
-  collegeConferral: "2 October 2026",
+  collegeConferral: "12 October 2026",
 };
 
 export const KRILL = {

@@ -1,9 +1,5 @@
 import Link from "next/link";
 
-// TODO(M3): the Verify nav item deep-links to the demo credential until a
-// /verify lookup form ships.
-const DEMO_CREDENTIAL_ID = "CLLG-COL-2026-000184";
-
 /**
  * Site chrome top bar. `active` underlines the current section. The letter and
  * report preview routes intentionally omit the masthead — they are screenshot
@@ -34,10 +30,7 @@ export default function Masthead({
           <Link href="/campus" className={`hidden md:inline ${link(active === "campus")}`}>
             The Campus
           </Link>
-          <Link
-            href={`/verify/${DEMO_CREDENTIAL_ID}`}
-            className={`hidden sm:inline ${link(active === "verify")}`}
-          >
+          <Link href="/verify" className={`hidden sm:inline ${link(active === "verify")}`}>
             Verify a Credential
           </Link>
           <Link href="/dashboard" className={`hidden sm:inline ${link(active === "dashboard")}`}>
