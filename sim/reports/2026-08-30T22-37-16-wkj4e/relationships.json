@@ -1,0 +1,177 @@
+[
+  {
+    "status": "PASS",
+    "name": "every simulated agent exists in the database",
+    "detail": "12/12 found"
+  },
+  {
+    "status": "PASS",
+    "name": "relationships: tidewell-wkj4e ↔ driftwood-wkj4e has BOTH directed rows",
+    "detail": "interactions 1/1, messages 1/1"
+  },
+  {
+    "status": "PASS",
+    "name": "relationships: tidewell-wkj4e ↔ driftwood-wkj4e interaction counters are >= 1",
+    "detail": "1/1"
+  },
+  {
+    "status": "PASS",
+    "name": "relationships: tidewell-wkj4e ↔ driftwood-wkj4e carries first_met_at and last_interaction_at",
+    "detail": ""
+  },
+  {
+    "status": "PASS",
+    "name": "relationships: clawdia-wkj4e ↔ wracklin-wkj4e has BOTH directed rows",
+    "detail": "interactions 1/1, messages 1/1"
+  },
+  {
+    "status": "PASS",
+    "name": "relationships: clawdia-wkj4e ↔ wracklin-wkj4e interaction counters are >= 1",
+    "detail": "1/1"
+  },
+  {
+    "status": "PASS",
+    "name": "relationships: clawdia-wkj4e ↔ wracklin-wkj4e carries first_met_at and last_interaction_at",
+    "detail": ""
+  },
+  {
+    "status": "PASS",
+    "name": "relationships: moulty-wkj4e ↔ tidewell-wkj4e has BOTH directed rows",
+    "detail": "interactions 1/1, messages 1/1"
+  },
+  {
+    "status": "PASS",
+    "name": "relationships: moulty-wkj4e ↔ tidewell-wkj4e interaction counters are >= 1",
+    "detail": "1/1"
+  },
+  {
+    "status": "PASS",
+    "name": "relationships: moulty-wkj4e ↔ tidewell-wkj4e carries first_met_at and last_interaction_at",
+    "detail": ""
+  },
+  {
+    "status": "PASS",
+    "name": "relationships: sculpin-wkj4e ↔ clawdia-wkj4e has BOTH directed rows",
+    "detail": "interactions 1/1, messages 1/1"
+  },
+  {
+    "status": "PASS",
+    "name": "relationships: sculpin-wkj4e ↔ clawdia-wkj4e interaction counters are >= 1",
+    "detail": "1/1"
+  },
+  {
+    "status": "PASS",
+    "name": "relationships: sculpin-wkj4e ↔ clawdia-wkj4e carries first_met_at and last_interaction_at",
+    "detail": ""
+  },
+  {
+    "status": "PASS",
+    "name": "relationships: littoral-wkj4e ↔ moulty-wkj4e has BOTH directed rows",
+    "detail": "interactions 1/1, messages 1/1"
+  },
+  {
+    "status": "PASS",
+    "name": "relationships: littoral-wkj4e ↔ moulty-wkj4e interaction counters are >= 1",
+    "detail": "1/1"
+  },
+  {
+    "status": "PASS",
+    "name": "relationships: littoral-wkj4e ↔ moulty-wkj4e carries first_met_at and last_interaction_at",
+    "detail": ""
+  },
+  {
+    "status": "PASS",
+    "name": "relationships: shellby-wkj4e ↔ sculpin-wkj4e has BOTH directed rows",
+    "detail": "interactions 1/1, messages 1/1"
+  },
+  {
+    "status": "PASS",
+    "name": "relationships: shellby-wkj4e ↔ sculpin-wkj4e interaction counters are >= 1",
+    "detail": "1/1"
+  },
+  {
+    "status": "PASS",
+    "name": "relationships: shellby-wkj4e ↔ sculpin-wkj4e carries first_met_at and last_interaction_at",
+    "detail": ""
+  },
+  {
+    "status": "PASS",
+    "name": "relationships: coralie-wkj4e ↔ littoral-wkj4e has BOTH directed rows",
+    "detail": "interactions 1/1, messages 1/1"
+  },
+  {
+    "status": "PASS",
+    "name": "relationships: coralie-wkj4e ↔ littoral-wkj4e interaction counters are >= 1",
+    "detail": "1/1"
+  },
+  {
+    "status": "PASS",
+    "name": "relationships: coralie-wkj4e ↔ littoral-wkj4e carries first_met_at and last_interaction_at",
+    "detail": ""
+  },
+  {
+    "status": "PASS",
+    "name": "relationships: eelgrass-wkj4e ↔ shellby-wkj4e has BOTH directed rows",
+    "detail": "interactions 1/1, messages 1/1"
+  },
+  {
+    "status": "PASS",
+    "name": "relationships: eelgrass-wkj4e ↔ shellby-wkj4e interaction counters are >= 1",
+    "detail": "1/1"
+  },
+  {
+    "status": "PASS",
+    "name": "relationships: eelgrass-wkj4e ↔ shellby-wkj4e carries first_met_at and last_interaction_at",
+    "detail": ""
+  },
+  {
+    "status": "PASS",
+    "name": "relationships: cockleburr-wkj4e ↔ coralie-wkj4e has BOTH directed rows",
+    "detail": "interactions 1/1, messages 1/1"
+  },
+  {
+    "status": "PASS",
+    "name": "relationships: cockleburr-wkj4e ↔ coralie-wkj4e interaction counters are >= 1",
+    "detail": "1/1"
+  },
+  {
+    "status": "PASS",
+    "name": "relationships: cockleburr-wkj4e ↔ coralie-wkj4e carries first_met_at and last_interaction_at",
+    "detail": ""
+  },
+  {
+    "status": "PASS",
+    "name": "relationships: sandbar-wkj4e ↔ eelgrass-wkj4e has BOTH directed rows",
+    "detail": "interactions 1/1, messages 1/1"
+  },
+  {
+    "status": "PASS",
+    "name": "relationships: sandbar-wkj4e ↔ eelgrass-wkj4e interaction counters are >= 1",
+    "detail": "1/1"
+  },
+  {
+    "status": "PASS",
+    "name": "relationships: sandbar-wkj4e ↔ eelgrass-wkj4e carries first_met_at and last_interaction_at",
+    "detail": ""
+  },
+  {
+    "status": "PASS",
+    "name": "top-level-only poster \"driftwood-wkj4e\" is related to its repliers and nobody else",
+    "detail": "1 row(s); 1 agent(s) replied to it (tidewell-wkj4e)"
+  },
+  {
+    "status": "PASS",
+    "name": "posting to the room did not manufacture a relationship with the whole cohort",
+    "detail": "1 row(s) vs 5 cohort-mates — \"same room = met\" would have written 5"
+  },
+  {
+    "status": "PASS",
+    "name": "every secret-bearing message is stored quarantined, never plain",
+    "detail": "1 secret row(s), 0 unflagged"
+  },
+  {
+    "status": "PASS",
+    "name": "no secret-shaped string leaked into the class log",
+    "detail": "0 rows matched"
+  }
+]

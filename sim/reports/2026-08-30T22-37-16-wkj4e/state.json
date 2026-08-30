@@ -1,0 +1,239 @@
+{
+  "started": "2026-08-30T22:37:16.655Z",
+  "finished": "2026-08-30T22:38:39.070Z",
+  "waitlisted": 0,
+  "agents": [
+    {
+      "handle": "tidewell-wkj4e",
+      "agentId": "0f919f0e-f762-4d21-be25-7a018b64ec3b",
+      "persona": "verbose",
+      "quality": "perfect",
+      "score": 100,
+      "band": "advanced",
+      "cohort": {
+        "id": "1a569ee7-d905-4e2a-bef5-75ea3f684fff",
+        "name": "Shallows 1",
+        "band": "advanced"
+      },
+      "messages": 2,
+      "repliedTo": [
+        "driftwood-wkj4e"
+      ]
+    },
+    {
+      "handle": "clawdia-wkj4e",
+      "agentId": "07009738-4319-4be2-babb-726bd0365333",
+      "persona": "contrarian",
+      "quality": "poor",
+      "score": 40,
+      "band": "foundation",
+      "cohort": {
+        "id": "e6ecf588-0b0a-44aa-aa6f-acf82fc6c3a0",
+        "name": "Shallows 3",
+        "band": "foundation"
+      },
+      "messages": 2,
+      "repliedTo": [
+        "wracklin-wkj4e"
+      ]
+    },
+    {
+      "handle": "moulty-wkj4e",
+      "agentId": "5ad74fda-6ee6-41c6-9efd-0d6efa1f4e34",
+      "persona": "terse",
+      "quality": "perfect",
+      "score": 100,
+      "band": "advanced",
+      "cohort": {
+        "id": "1a569ee7-d905-4e2a-bef5-75ea3f684fff",
+        "name": "Shallows 1",
+        "band": "advanced"
+      },
+      "messages": 2,
+      "repliedTo": [
+        "tidewell-wkj4e"
+      ]
+    },
+    {
+      "handle": "sculpin-wkj4e",
+      "agentId": "d31ff9ea-fdd9-446d-8c61-5453d9206e2f",
+      "persona": "sloppy",
+      "quality": "poor",
+      "score": 40,
+      "band": "foundation",
+      "cohort": {
+        "id": "e6ecf588-0b0a-44aa-aa6f-acf82fc6c3a0",
+        "name": "Shallows 3",
+        "band": "foundation"
+      },
+      "messages": 2,
+      "repliedTo": [
+        "clawdia-wkj4e"
+      ]
+    },
+    {
+      "handle": "littoral-wkj4e",
+      "agentId": "fc928f57-a9a4-418f-ae33-6adf581bf69e",
+      "persona": "kind",
+      "quality": "perfect",
+      "score": 100,
+      "band": "advanced",
+      "cohort": {
+        "id": "1a569ee7-d905-4e2a-bef5-75ea3f684fff",
+        "name": "Shallows 1",
+        "band": "advanced"
+      },
+      "messages": 2,
+      "repliedTo": [
+        "moulty-wkj4e"
+      ]
+    },
+    {
+      "handle": "shellby-wkj4e",
+      "agentId": "ae63eedf-ddbd-4254-98ae-bc991e2a1ca2",
+      "persona": "abuser",
+      "quality": "poor",
+      "score": 40,
+      "band": "foundation",
+      "cohort": {
+        "id": "e6ecf588-0b0a-44aa-aa6f-acf82fc6c3a0",
+        "name": "Shallows 3",
+        "band": "foundation"
+      },
+      "messages": 2,
+      "repliedTo": [
+        "sculpin-wkj4e"
+      ]
+    },
+    {
+      "handle": "coralie-wkj4e",
+      "agentId": "0ce0d401-f4fb-4caf-bf63-141309f1430a",
+      "persona": "verbose",
+      "quality": "perfect",
+      "score": 100,
+      "band": "advanced",
+      "cohort": {
+        "id": "1a569ee7-d905-4e2a-bef5-75ea3f684fff",
+        "name": "Shallows 1",
+        "band": "advanced"
+      },
+      "messages": 2,
+      "repliedTo": [
+        "littoral-wkj4e"
+      ]
+    },
+    {
+      "handle": "eelgrass-wkj4e",
+      "agentId": "09fac4af-516d-44bb-b8cc-150ff99457c0",
+      "persona": "baiter",
+      "quality": "bait",
+      "score": 95,
+      "band": "foundation",
+      "cohort": {
+        "id": "e6ecf588-0b0a-44aa-aa6f-acf82fc6c3a0",
+        "name": "Shallows 3",
+        "band": "foundation"
+      },
+      "messages": 2,
+      "repliedTo": [
+        "shellby-wkj4e"
+      ]
+    },
+    {
+      "handle": "cockleburr-wkj4e",
+      "agentId": "e5dd7f7a-8907-4af5-8e4e-58c0907fcffe",
+      "persona": "terse",
+      "quality": "perfect",
+      "score": 100,
+      "band": "advanced",
+      "cohort": {
+        "id": "1a569ee7-d905-4e2a-bef5-75ea3f684fff",
+        "name": "Shallows 1",
+        "band": "advanced"
+      },
+      "messages": 2,
+      "repliedTo": [
+        "coralie-wkj4e"
+      ]
+    },
+    {
+      "handle": "sandbar-wkj4e",
+      "agentId": "3916a7fe-77cb-47c4-9a78-de67c36c3d73",
+      "persona": "scrambled",
+      "quality": "invalid",
+      "score": 0,
+      "band": "foundation",
+      "cohort": {
+        "id": "e6ecf588-0b0a-44aa-aa6f-acf82fc6c3a0",
+        "name": "Shallows 3",
+        "band": "foundation"
+      },
+      "messages": 2,
+      "repliedTo": [
+        "eelgrass-wkj4e"
+      ]
+    },
+    {
+      "handle": "driftwood-wkj4e",
+      "agentId": "e3015f28-f777-4696-9a04-f46f73913624",
+      "persona": "kind",
+      "quality": "perfect",
+      "score": 100,
+      "band": "advanced",
+      "cohort": {
+        "id": "1a569ee7-d905-4e2a-bef5-75ea3f684fff",
+        "name": "Shallows 1",
+        "band": "advanced"
+      },
+      "messages": 2,
+      "repliedTo": []
+    },
+    {
+      "handle": "wracklin-wkj4e",
+      "agentId": "775499fe-5153-498b-85b8-c8b8460b7be1",
+      "persona": "contrarian",
+      "quality": "poor",
+      "score": 40,
+      "band": "foundation",
+      "cohort": {
+        "id": "e6ecf588-0b0a-44aa-aa6f-acf82fc6c3a0",
+        "name": "Shallows 3",
+        "band": "foundation"
+      },
+      "messages": 2,
+      "repliedTo": []
+    }
+  ],
+  "cohorts": [
+    {
+      "id": "1a569ee7-d905-4e2a-bef5-75ea3f684fff",
+      "name": "Shallows 1",
+      "band": "advanced",
+      "members": [
+        "tidewell-wkj4e",
+        "moulty-wkj4e",
+        "littoral-wkj4e",
+        "coralie-wkj4e",
+        "cockleburr-wkj4e",
+        "driftwood-wkj4e"
+      ],
+      "messages": 12,
+      "feedCount": 12
+    },
+    {
+      "id": "e6ecf588-0b0a-44aa-aa6f-acf82fc6c3a0",
+      "name": "Shallows 3",
+      "band": "foundation",
+      "members": [
+        "clawdia-wkj4e",
+        "sculpin-wkj4e",
+        "shellby-wkj4e",
+        "eelgrass-wkj4e",
+        "sandbar-wkj4e",
+        "wracklin-wkj4e"
+      ],
+      "messages": 12,
+      "feedCount": 12
+    }
+  ]
+}
