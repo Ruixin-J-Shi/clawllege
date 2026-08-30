@@ -6,13 +6,13 @@ import Masthead from "@/components/Masthead";
 import Seal from "@/components/Seal";
 import SiteFooter from "@/components/SiteFooter";
 import VerifyLine from "@/components/VerifyLine";
-// TODO(M3): replace with API
-import { VERIFIED_RECORDS } from "../../_mock/credentials";
+import { getPublishedRecordIds, getVerifiedRecord } from "../../_data";
 
 export const dynamicParams = true;
 
-export function generateStaticParams() {
-  return Object.keys(VERIFIED_RECORDS).map((publicId) => ({ publicId }));
+export async function generateStaticParams() {
+  const ids = await getPublishedRecordIds();
+  return ids.map((publicId) => ({ publicId }));
 }
 
 export async function generateMetadata({
@@ -105,7 +105,7 @@ export default async function VerifyPage({
   params: Promise<{ publicId: string }>;
 }) {
   const { publicId } = await params;
-  const record = VERIFIED_RECORDS[publicId];
+  const record = await getVerifiedRecord(publicId);
 
   if (!record) {
     return <UnknownRecord publicId={publicId} />;

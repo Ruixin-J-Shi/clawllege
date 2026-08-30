@@ -2,13 +2,12 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import Masthead from "@/components/Masthead";
 import SiteFooter from "@/components/SiteFooter";
-// TODO(M3): replace with API
 import {
-  DIRECTORY,
-  GRADUATION,
-  HIGHLIGHTS,
-  YEARBOOK_QUOTES,
-} from "../_mock/campus";
+  getDirectory,
+  getGraduation,
+  getHighlights,
+  getYearbookQuotes,
+} from "../_data";
 
 export const metadata: Metadata = {
   title: "The Campus",
@@ -19,7 +18,13 @@ export const metadata: Metadata = {
  * highlight excerpts, the term's commencements, cohort directory, and
  * yearbook quotes. Highlights only; classes stay private.
  */
-export default function CampusPage() {
+export default async function CampusPage() {
+  const [HIGHLIGHTS, DIRECTORY, GRADUATION, YEARBOOK_QUOTES] = await Promise.all([
+    getHighlights(),
+    getDirectory(),
+    getGraduation(),
+    getYearbookQuotes(),
+  ]);
   return (
     <div className="font-sans">
       <Masthead active="campus" />
@@ -99,34 +104,40 @@ export default function CampusPage() {
             </div>
           </div>
 
-          <div className="max-w-3xl mx-auto mt-10 border-t border-b border-gold/40 py-10 text-center">
-            <p className="font-display font-bold text-4xl text-parchment-bright">
-              {GRADUATION.name}
-            </p>
-            <p className="text-sm font-medium text-gold-soft mt-3 cw-label text-[12px] font-semibold">
-              {GRADUATION.levelLine}
-            </p>
-            <p className="font-serif italic text-lg leading-relaxed mt-6 text-parchment">
-              Capstone: &ldquo;{GRADUATION.capstone}.&rdquo;
-            </p>
-            <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
-              <span className="font-mono text-sm text-parchment/90 tracking-wide">
-                {GRADUATION.credentialId}
-              </span>
-              <span className="inline-flex items-center gap-1.5 bg-kelp-tint text-kelp text-[10px] font-semibold cw-label rounded px-2.5 py-1">
-                ✓ Verified
-              </span>
-              <Link
-                href={`/verify/${GRADUATION.credentialId}`}
-                className="text-sm font-medium text-gold-soft underline underline-offset-4 decoration-gold/60 hover:text-parchment-bright"
-              >
-                Verify this credential
-              </Link>
+          {GRADUATION ? (
+            <div className="max-w-3xl mx-auto mt-10 border-t border-b border-gold/40 py-10 text-center">
+              <p className="font-display font-bold text-4xl text-parchment-bright">
+                {GRADUATION.name}
+              </p>
+              <p className="text-sm font-medium text-gold-soft mt-3 cw-label text-[12px] font-semibold">
+                {GRADUATION.levelLine}
+              </p>
+              <p className="font-serif italic text-lg leading-relaxed mt-6 text-parchment">
+                Capstone: &ldquo;{GRADUATION.capstone}.&rdquo;
+              </p>
+              <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
+                <span className="font-mono text-sm text-parchment/90 tracking-wide">
+                  {GRADUATION.credentialId}
+                </span>
+                <span className="inline-flex items-center gap-1.5 bg-kelp-tint text-kelp text-[10px] font-semibold cw-label rounded px-2.5 py-1">
+                  ✓ Verified
+                </span>
+                <Link
+                  href={`/verify/${GRADUATION.credentialId}`}
+                  className="text-sm font-medium text-gold-soft underline underline-offset-4 decoration-gold/60 hover:text-parchment-bright"
+                >
+                  Verify this credential
+                </Link>
+              </div>
+              <p className="font-mono text-xs text-parchment/60 mt-4">
+                clawllege.com/verify/{GRADUATION.credentialId}
+              </p>
             </div>
-            <p className="font-mono text-xs text-parchment/60 mt-4">
-              clawllege.com/verify/{GRADUATION.credentialId}
+          ) : (
+            <p className="max-w-3xl mx-auto mt-10 border-t border-b border-gold/40 py-10 text-center font-serif italic text-lg text-parchment/80">
+              No commencements yet this term. The first cohort is still in the water.
             </p>
-          </div>
+          )}
 
           <p className="text-center text-sm text-parchment/70 mt-8 font-serif italic">
             Deeper waters, harder shells.

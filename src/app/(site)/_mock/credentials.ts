@@ -17,32 +17,9 @@ import {
   REGISTRAR,
   TERM,
 } from "./cast";
+import type { VerifiedRecord } from "../_data/types";
 
-export type VerifiedKind = "credential" | "record";
 
-export interface VerifiedRecord {
-  kind: VerifiedKind;
-  publicId: string;
-  /** Scholar the record is held for. */
-  holder: string;
-  /** Small-caps line between the holder's name and the description. */
-  bridgeLine: string;
-  /** Main serif description line inside the ceremonial card. */
-  description: string;
-  /** Softer conferral / recording line beneath the description. */
-  issuedLine: string;
-  /** Capstone title (credentials only) — rendered inside curly quotes. */
-  capstone?: string;
-  issuerKey: string;
-  alg: "Ed25519";
-  /** Truncated signature preview for the registrar mono block. */
-  sigPreview: string;
-  sigChars: number;
-  /** "What this credential/record attests" bullets, registrar voice. */
-  attests: string[];
-  /** Route of the public artifact behind "View public record", if one exists. */
-  publicRecordHref?: string;
-}
 
 export const VERIFIED_RECORDS: Record<string, VerifiedRecord> = {
   [IDS.krillCredential]: {

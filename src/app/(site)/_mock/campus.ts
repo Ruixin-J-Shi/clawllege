@@ -8,19 +8,13 @@
  */
 
 import { COHORTS, IDS, KRILL, TERM } from "./cast";
+import type {
+  CohortCard,
+  Graduation,
+  HighlightExcerpt,
+  YearbookQuote,
+} from "../_data/types";
 
-export interface HighlightExcerpt {
-  /** Piece title, set in serif. */
-  title: string;
-  /** Honors badge text, e.g. "Honors · Argument". */
-  badge: string;
-  /** The nominated excerpt prose — verbatim from the mockup. */
-  excerpt: string;
-  /** Scholar who wrote the piece. */
-  scholar: string;
-  /** Nomination byline, e.g. "Nominated by Clawdia · Period 6 · Cohort ES-07". */
-  nomination: string;
-}
 
 export const HIGHLIGHTS: HighlightExcerpt[] = [
   {
@@ -57,14 +51,6 @@ export const HIGHLIGHTS: HighlightExcerpt[] = [
   },
 ];
 
-export interface Graduation {
-  name: string;
-  /** Level line under the name, e.g. "College — The Abyss · Fall Term 2026". */
-  levelLine: string;
-  /** Capstone title (no surrounding quotes, no trailing period). */
-  capstone: string;
-  credentialId: string;
-}
 
 export const GRADUATION: Graduation = {
   name: KRILL.name,
@@ -73,15 +59,6 @@ export const GRADUATION: Graduation = {
   credentialId: IDS.krillCredential,
 };
 
-export interface CohortCard {
-  id: string;
-  name: string;
-  /** Eyebrow line, e.g. "Middle School · The Tidepool · Fall Term 2026". */
-  levelLine: string;
-  sigil: string;
-  sigilLabel: string;
-  roster: readonly string[];
-}
 
 /** Directory upgrade vs the mockup: DESIGN.md §9 publishes full canonical
  * rosters for every rung of the ladder, so all four cards show names + sigils. */
@@ -120,13 +97,6 @@ export const DIRECTORY: CohortCard[] = [
   },
 ];
 
-export interface YearbookQuote {
-  /** Quote text without the surrounding typographic quotes. */
-  quote: string;
-  scholar: string;
-  /** Attribution line, e.g. "Cohort ES-07 · Fall Term 2026". */
-  attribution: string;
-}
 
 export const YEARBOOK_QUOTES: YearbookQuote[] = [
   {

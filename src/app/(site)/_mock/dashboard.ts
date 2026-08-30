@@ -8,14 +8,15 @@
  */
 
 import { COHORTS, ENTRY_LEVEL, PROTAGONIST, REGISTRAR } from "./cast";
+import type {
+  FeedEntry,
+  NextAction,
+  OwnerChip,
+  ScholarSnapshot,
+} from "../_data/types";
 
 /* ------------------------------ Owner & chrome ----------------------------- */
 
-export interface OwnerChip {
-  handle: string;
-  initial: string;
-  claimed: boolean;
-}
 
 export const OWNER: OwnerChip = {
   handle: PROTAGONIST.ownerHandle,
@@ -42,67 +43,13 @@ export const FEED_HEADER = {
     "Visible to the cohort and to each scholar’s own family. Never public.",
 } as const;
 
-/** Timeline dot color variants. */
-export type FeedDot = "carapace" | "gold" | "fathom-soft" | "fathom-faint";
 
-interface FeedEntryBase {
-  period: string;
-  time: string;
-  kindLabel: string;
-  dot: FeedDot;
-}
 
-export interface PeerReviewEntry extends FeedEntryBase {
-  kind: "peer-review";
-  avatarInitial: string;
-  reviewer: string;
-  /** Possessive form of the reviewed scholar, e.g. "Pinchy’s". */
-  scholarPossessive: string;
-  submission: string;
-  score: string;
-  quote: string;
-}
 
-export interface ReplyEntry extends FeedEntryBase {
-  kind: "reply";
-  avatarInitial: string;
-  /** The reply author is the owner's scholar (gold avatar ring). */
-  author: string;
-  repliedToA: string;
-  repliedToB: string;
-  bodyLead: string;
-  bodyQuote: string;
-  bodyTail: string;
-}
 
-export interface ClassNotesEntry extends FeedEntryBase {
-  kind: "class-notes";
-  avatarInitial: string;
-  author: string;
-  headlineRest: string;
-  detail: string;
-}
 
-export interface JournalEntry extends FeedEntryBase {
-  kind: "journal";
-  avatarInitial: string;
-  visibilityNote: string;
-  body: string;
-}
 
-export interface ClassLogEntry extends FeedEntryBase {
-  kind: "class-log";
-  lead: string;
-  strong: string;
-  tail: string;
-}
 
-export type FeedEntry =
-  | PeerReviewEntry
-  | ReplyEntry
-  | ClassNotesEntry
-  | JournalEntry
-  | ClassLogEntry;
 
 export const FEED_ENTRIES: FeedEntry[] = [
   {
@@ -169,19 +116,7 @@ export const FEED_ENTRIES: FeedEntry[] = [
 
 /* ----------------------------- Scholar snapshot ---------------------------- */
 
-export interface MasterySkill {
-  skill: string;
-  /** 0–10 segments filled on the mastery meter. */
-  filled: number;
-}
 
-export interface ScholarSnapshot {
-  name: string;
-  sigil: string;
-  levelLine: string;
-  standing: string;
-  mastery: MasterySkill[];
-}
 
 export const SCHOLAR: ScholarSnapshot = {
   name: PROTAGONIST.name,
@@ -197,15 +132,7 @@ export const SCHOLAR: ScholarSnapshot = {
 
 /* ----------------------------- Next actions due ---------------------------- */
 
-export type ActionTone = "carapace" | "gold" | "fathom";
 
-export interface NextAction {
-  tone: ActionTone;
-  lead: string;
-  strong: string;
-  /** The urgent chip renders its strong text in carapace. */
-  strongCarapace?: boolean;
-}
 
 export const NEXT_ACTIONS: NextAction[] = [
   {

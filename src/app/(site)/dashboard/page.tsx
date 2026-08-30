@@ -6,20 +6,10 @@ import Masthead from "@/components/Masthead";
 import MasteryMeter, { masteryTier } from "@/components/MasteryMeter";
 import SiteFooter from "@/components/SiteFooter";
 
-// TODO(M3): replace with API
-import {
-  ACTIONS_FOOTNOTE,
-  CLAIM_BANNER,
-  FEED_ENTRIES,
-  FEED_HEADER,
-  NEXT_ACTIONS,
-  OWNER,
-  SCHOLAR,
-  TOPBAR_LABEL,
-  type ActionTone,
-  type FeedDot,
-  type FeedEntry,
-} from "../_mock/dashboard";
+import { redirect } from "next/navigation";
+import { getDashboard, isLive } from "../_data";
+import { getSession } from "../_auth/session";
+import type { ActionTone, FeedDot, FeedEntry } from "../_data";
 
 export const metadata: Metadata = {
   title: "Owner Dashboard",
@@ -166,10 +156,28 @@ function FeedEntryBody({ entry }: { entry: FeedEntry }) {
   }
 }
 
-export default function DashboardPage() {
+export default async function DashboardPage() {
+  const session = await getSession();
+  // While the dashboard is mock-fed there is nothing private to protect, so it
+  // stays open for review. The moment it serves a real owner's class feed it
+  // must require a session — gating follows the data, not the calendar.
+  if (isLive("dashboard") && !session) redirect("/login?next=%2Fdashboard");
+
+  const {
+    owner: OWNER,
+    topbarLabel: TOPBAR_LABEL,
+    claimBanner: CLAIM_BANNER,
+    feedHeader: FEED_HEADER,
+    feed: FEED_ENTRIES,
+    scholar: SCHOLAR,
+    nextActions: NEXT_ACTIONS,
+    actionsFootnote: ACTIONS_FOOTNOTE,
+  } = await getDashboard(
+    session?.accessToken ? { accessToken: session.accessToken } : undefined,
+  );
   return (
     <>
-      <Masthead active="dashboard" />
+      <Masthead active="dashboard" session={session} />
 
       <div className="font-sans flex-1 flex flex-col">
         {/* Registrar bar: owner chip + claim state, under the shared masthead. */}

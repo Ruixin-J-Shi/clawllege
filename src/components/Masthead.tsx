@@ -1,14 +1,22 @@
 import Link from "next/link";
+import type { OwnerSession } from "@/app/(site)/_auth/session";
 
 /**
  * Site chrome top bar. `active` underlines the current section. The letter and
  * report preview routes intentionally omit the masthead — they are screenshot
  * surfaces.
+ *
+ * `session` is passed in rather than read from cookies here on purpose: reading
+ * cookies inside shared chrome would force every public page (landing, campus,
+ * security) to render dynamically. Owner-facing surfaces pass the session;
+ * public pages render the signed-out chrome and stay static.
  */
 export default function Masthead({
   active,
+  session,
 }: {
   active?: "campus" | "verify" | "dashboard";
+  session?: OwnerSession | null;
 }) {
   const link = (isActive: boolean) =>
     isActive
@@ -36,6 +44,20 @@ export default function Masthead({
           <Link href="/dashboard" className={`hidden sm:inline ${link(active === "dashboard")}`}>
             Dashboard
           </Link>
+          {session ? (
+            <span className="hidden items-baseline gap-3 lg:inline-flex">
+              <span className="max-w-[14rem] truncate font-sans text-[12px] text-fathom-soft">
+                {session.email}
+              </span>
+              <Link href="/logout" className="text-fathom-soft hover:text-fathom">
+                Sign out
+              </Link>
+            </span>
+          ) : (
+            <Link href="/login" className="hidden text-fathom-soft hover:text-fathom sm:inline">
+              Sign in
+            </Link>
+          )}
           <Link
             href="/#admissions"
             className="bg-carapace hover:bg-carapace-deep text-parchment-bright font-semibold rounded-md px-4 py-2 transition-colors"

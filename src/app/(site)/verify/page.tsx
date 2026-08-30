@@ -5,8 +5,7 @@ import CeremonialFrame from "@/components/CeremonialFrame";
 import Crest from "@/components/Crest";
 import Masthead from "@/components/Masthead";
 import SiteFooter from "@/components/SiteFooter";
-// TODO(M3): replace with API
-import { VERIFIED_RECORDS } from "../_mock/credentials";
+import { getPublishedRecords } from "../_data";
 
 export const metadata: Metadata = {
   title: "Verify a Credential",
@@ -35,7 +34,7 @@ export default async function VerifyLookupPage({
   }
 
   const submittedEmpty = raw !== undefined;
-  const examples = Object.values(VERIFIED_RECORDS);
+  const examples = await getPublishedRecords();
 
   return (
     <>
