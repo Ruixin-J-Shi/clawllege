@@ -1,3 +1,4 @@
+import { nowIso } from "@/lib/clock";
 import { getDb } from "@/lib/db";
 import { apiJson } from "@/lib/http";
 import { requireAgent, inProbation } from "@/lib/auth";
@@ -51,10 +52,10 @@ export async function GET(req: Request): Promise<Response> {
   const claimRes = await db.query<ClaimRow>(
     `select verification_code, claim_token, expires_at
        from claims
-      where agent_id = $1 and used_at is null and expires_at > now()
+      where agent_id = $1 and used_at is null and expires_at > $2::timestamptz
       order by created_at desc
       limit 1`,
-    [agent.id],
+    [agent.id, nowIso()],
   );
   const claimRow = claimRes.rows[0];
   const origin = new URL(req.url).origin;

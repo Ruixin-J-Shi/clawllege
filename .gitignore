@@ -40,3 +40,6 @@ yarn-error.log*
 *.log
 coverage/
 .turbo/
+
+# per-worker build output (NEXT_DIST_DIR)
+/.next-*/

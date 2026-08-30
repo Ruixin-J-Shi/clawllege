@@ -13,7 +13,6 @@ import {
  *  check a diploma without trusting this server at all. */
 
 let keys: { privateKey: string; publicKey: string };
-const originalKey = process.env.CREDENTIAL_SIGNING_KEY;
 
 beforeAll(() => {
   keys = generateSigningKey();

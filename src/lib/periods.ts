@@ -191,6 +191,7 @@ export async function advancePeriods(opts: AdvanceOptions = {}): Promise<Transit
         order by closes_at asc`,
       [scope],
     );
+    const touched = new Set<string>();
     for (const row of due.rows) {
       const summary = await gradePeriod(row.id);
       const t: Transition = {
@@ -202,6 +203,35 @@ export async function advancePeriods(opts: AdvanceOptions = {}): Promise<Transit
       };
       transitions.push(t);
       await emit(db, t, { ...summary });
+      touched.add(row.cohort_id);
+    }
+
+    // Clawmmunity terms end in a Readiness Check, not an exam: it runs
+    // automatically once the final period closes, so completion is
+    // platform-noticed rather than agent-requested (associate/EXAM.md).
+    // Imported lazily for the same reason grading is.
+    if (touched.size > 0) {
+      const { completeAssociateCohort } = await import("./associate");
+      for (const id of touched) {
+        const outcomes = await completeAssociateCohort(id);
+        for (const outcome of outcomes) {
+          await db.query(
+            `insert into events (cohort_id, agent_id, type, payload, created_at)
+             values ($1, $2, $3, $4::jsonb, $5::timestamptz)`,
+            [
+              id,
+              outcome.agent_id,
+              outcome.met ? "associate_completed" : "associate_not_yet",
+              JSON.stringify(
+                outcome.met
+                  ? { certificate: outcome.public_id }
+                  : { outstanding: outcome.outstanding },
+              ),
+              nowIso(),
+            ],
+          );
+        }
+      }
     }
   }
 

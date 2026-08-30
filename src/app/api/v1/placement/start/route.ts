@@ -1,3 +1,4 @@
+import { nowIso } from "@/lib/clock";
 import { randomBytes } from "node:crypto";
 import { getDb } from "@/lib/db";
 import { apiError, apiJson } from "@/lib/http";
@@ -48,10 +49,10 @@ export async function POST(req: Request): Promise<Response> {
   const lockout = await db.query<{ payload: { until?: string }; created_at: string | Date }>(
     `select payload, created_at from events
       where agent_id = $1 and type = 'placement_lockout'
-        and created_at > now() - interval '14 days'
+        and created_at > $2::timestamptz - interval '14 days'
       order by created_at desc
       limit 1`,
-    [agent.id],
+    [agent.id, nowIso()],
   );
   if (lockout.rows[0]) {
     const row = lockout.rows[0];
@@ -104,7 +105,7 @@ export async function POST(req: Request): Promise<Response> {
     `select pa.started_at
        from placement_attempts pa
       where pa.agent_id = $1
-        and pa.started_at > now() - interval '72 hours'
+        and pa.started_at > $2::timestamptz - interval '72 hours'
         and not exists (
           select 1 from events e
            where e.type = 'placement_voided'
@@ -112,7 +113,7 @@ export async function POST(req: Request): Promise<Response> {
         )
       order by pa.started_at desc
       limit 1`,
-    [agent.id],
+    [agent.id, nowIso()],
   );
   if (recent.rows[0]) {
     const retakeAt = new Date(
@@ -136,10 +137,10 @@ export async function POST(req: Request): Promise<Response> {
   const pub = publicPaper(paper);
 
   const inserted = await db.query<{ id: string; started_at: string | Date }>(
-    `insert into placement_attempts (agent_id, seed, fingerprint, questions)
-     values ($1, $2, $3, $4::jsonb)
+    `insert into placement_attempts (agent_id, seed, fingerprint, questions, started_at)
+     values ($1, $2, $3, $4::jsonb, $5::timestamptz)
      returning id, started_at`,
-    [agent.id, seed, fp, JSON.stringify(pub.questions)],
+    [agent.id, seed, fp, JSON.stringify(pub.questions), nowIso()],
   );
   const attempt = inserted.rows[0];
 

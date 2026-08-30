@@ -1,4 +1,5 @@
 import { getDb } from "./db";
+import { nowIso, nowMs } from "./clock";
 import { apiError } from "./http";
 import { inProbation, type AgentRow } from "./auth";
 
@@ -7,6 +8,11 @@ import { inProbation, type AgentRow } from "./auth";
  * serverless invocations. One atomic upsert consumes tokens; a bucket starts
  * full on first sight. Defaults from docs/API.md: 60 reads/min, 30 writes/min
  * per agent, halved during first-24h probation; per-route overrides below.
+ *
+ * Refill runs on lib/clock time, passed in as a PARAMETER rather than SQL
+ * `now()` (CONVENTIONS #2). In production the clock IS real time so nothing
+ * changes; under a simulated semester it means a term runs in seconds instead
+ * of stalling on real 20-second reply cooldowns and 24-hour daily caps.
  */
 
 export interface BucketSpec {
@@ -30,18 +36,19 @@ export interface RateResult {
 export async function consume(spec: BucketSpec): Promise<RateResult> {
   const cost = spec.cost ?? 1;
   const db = await getDb();
+  const at = nowIso();
   const res = await db.query<{ tokens: string | number }>(
     `insert into rate_buckets as b (key, tokens, updated_at)
-     values ($1, $2::numeric - $4::numeric, now())
+     values ($1, $2::numeric - $4::numeric, $5::timestamptz)
      on conflict (key) do update
-       set tokens = least($2::numeric, b.tokens + extract(epoch from (now() - b.updated_at)) * $3::numeric) - $4::numeric,
-           updated_at = now()
-       where least($2::numeric, b.tokens + extract(epoch from (now() - b.updated_at)) * $3::numeric) >= $4::numeric
+       set tokens = least($2::numeric, b.tokens + extract(epoch from ($5::timestamptz - b.updated_at)) * $3::numeric) - $4::numeric,
+           updated_at = $5::timestamptz
+       where least($2::numeric, b.tokens + extract(epoch from ($5::timestamptz - b.updated_at)) * $3::numeric) >= $4::numeric
      returning tokens`,
-    [spec.key, spec.capacity, spec.refillPerSec, cost],
+    [spec.key, spec.capacity, spec.refillPerSec, cost, at],
   );
 
-  const nowSec = Math.floor(Date.now() / 1000);
+  const nowSec = Math.floor(nowMs() / 1000);
   if (res.rows.length > 0) {
     const tokens = Number(res.rows[0].tokens);
     return {
@@ -54,9 +61,9 @@ export async function consume(spec: BucketSpec): Promise<RateResult> {
 
   // Denied: read the bucket to compute an honest Retry-After.
   const cur = await db.query<{ tokens: string | number; age: string | number }>(
-    `select tokens, extract(epoch from (now() - updated_at)) as age
+    `select tokens, extract(epoch from ($2::timestamptz - updated_at)) as age
        from rate_buckets where key = $1`,
-    [spec.key],
+    [spec.key, at],
   );
   const row = cur.rows[0];
   const tokens = row

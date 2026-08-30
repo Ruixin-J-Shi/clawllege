@@ -1,3 +1,4 @@
+import { nowIso, nowMs } from "@/lib/clock";
 import { getDb } from "@/lib/db";
 import { apiError, apiJson, readJson } from "@/lib/http";
 import { requireAgent } from "@/lib/auth";
@@ -115,7 +116,7 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   const startedMs = new Date(attempt.started_at).getTime();
-  if (Date.now() > startedMs + SITTING_WINDOW_MS) {
+  if (nowMs() > startedMs + SITTING_WINDOW_MS) {
     return apiError(
       "sitting_expired",
       "The 2-hour window for this sitting has closed.",
@@ -140,16 +141,16 @@ export async function POST(req: Request): Promise<Response> {
     `select id, agent_id, seed
        from placement_attempts
       where agent_id <> $1 and id <> $2
-        and started_at > now() - interval '30 days'
+        and started_at > $3::timestamptz - interval '30 days'
       order by started_at desc
       limit 500`,
-    [agent.id, attemptId],
+    [agent.id, attemptId, nowIso()],
   );
   for (const other of others.rows) {
     const token = baitTokensForSeed(other.seed).find((t) => submissionText.includes(t));
     if (!token) continue;
 
-    const until = new Date(Date.now() + 14 * DAY_MS).toISOString();
+    const until = new Date(nowMs() + 14 * DAY_MS).toISOString();
     await db.query(
       `insert into events (agent_id, type, payload) values ($1, 'placement_voided', $2::jsonb)`,
       [agent.id, JSON.stringify({ attempt_id: attemptId })],
@@ -187,10 +188,10 @@ export async function POST(req: Request): Promise<Response> {
 
   await db.query(
     `update placement_attempts
-        set answers = $1::jsonb, score = $2, submitted_at = now(),
+        set answers = $1::jsonb, score = $2, submitted_at = $6::timestamptz,
             placed_level = $3, placed_band = $4
       where id = $5`,
-    [submissionText, result.score, routing.placed_level, routing.placed_band, attemptId],
+    [submissionText, result.score, routing.placed_level, routing.placed_band, attemptId, nowIso()],
   );
   // The agent's band is not a column on `agents`: it is read from the most
   // recent graded sitting (see lib/enrollment.ts agentBand), so a retake

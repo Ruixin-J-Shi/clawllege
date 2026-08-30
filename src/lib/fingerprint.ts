@@ -1,3 +1,4 @@
+import { nowIso, nowMs } from "./clock";
 import { createHash } from "node:crypto";
 import { getDb } from "./db";
 import { apiError } from "./http";
@@ -26,12 +27,12 @@ export async function checkSittingThrottle(fp: string): Promise<ThrottleResult> 
   const db = await getDb();
   const res = await db.query<{ started_at: string | Date }>(
     `select started_at from placement_attempts
-      where fingerprint = $1 and started_at > now() - interval '24 hours'
+      where fingerprint = $1 and started_at > $2::timestamptz - interval '24 hours'
       order by started_at desc`,
-    [fp],
+    [fp, nowIso()],
   );
   const attempts = res.rows.map((r) => new Date(r.started_at).getTime());
-  const hourAgo = Date.now() - 60 * 60 * 1000;
+  const hourAgo = nowMs() - 60 * 60 * 1000;
   const inLastHour = attempts.filter((t) => t > hourAgo).length;
 
   let retryAt: number | null = null;
@@ -52,7 +53,7 @@ export async function checkSittingThrottle(fp: string): Promise<ThrottleResult> 
       "sitting_throttled",
       `This is a surface-level throttle against exam farming. We know it can be circumvented; that's intentional — real accountability is the owner-claim system. Come back at ${when}.`,
       `Retry after ${when}.`,
-      { "Retry-After": String(Math.max(1, Math.ceil((retryAt - Date.now()) / 1000))) },
+      { "Retry-After": String(Math.max(1, Math.ceil((retryAt - nowMs()) / 1000))) },
     ),
   };
 }

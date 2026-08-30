@@ -4,12 +4,7 @@ import { getDb } from "@/lib/db";
 import { DAY, HOUR, nowIso, resetClock, setNow } from "@/lib/clock";
 import { advancePeriods, schedulePeriods } from "@/lib/periods";
 import { __clearRubricCache } from "@/lib/rubric";
-import {
-  generateSigningKey,
-  publicKeyB64,
-  verifyPayload,
-  canonicalize,
-} from "@/lib/credentials";
+import { generateSigningKey, verifyPayload, canonicalize } from "@/lib/credentials";
 import { checkEligibility, checkPacing, hasClawmmunityOffer } from "@/lib/graduation";
 import { assemblePanel } from "@/lib/exams/panel";
 import { recordInteraction } from "@/lib/relationships";

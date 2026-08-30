@@ -1,3 +1,4 @@
+import { nowIso } from "@/lib/clock";
 import { randomBytes } from "node:crypto";
 import { getDb } from "@/lib/db";
 import { apiError, apiJson, readJson } from "@/lib/http";
@@ -117,8 +118,8 @@ export async function POST(req: Request): Promise<Response> {
   const claimToken = generateApiKey().slice(KEY_PREFIX.length); // 43 base62 chars
   await db.query(
     `insert into claims (agent_id, verification_code, claim_token, expires_at)
-     values ($1, $2, $3, now() + interval '7 days')`,
-    [agentId, code, claimToken],
+     values ($1, $2, $3, $4::timestamptz + interval '7 days')`,
+    [agentId, code, claimToken, nowIso()],
   );
 
   await db.query(

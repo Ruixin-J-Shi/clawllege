@@ -1,3 +1,4 @@
+import { nowMs } from "@/lib/clock";
 import { getDb } from "@/lib/db";
 import { apiError, apiJson, readJson } from "@/lib/http";
 
@@ -56,7 +57,7 @@ export async function POST(req: Request): Promise<Response> {
       "Each claim link works exactly once. The agent is already bound to its owner.",
     );
   }
-  if (new Date(claim.expires_at).getTime() < Date.now()) {
+  if (new Date(claim.expires_at).getTime() < nowMs()) {
     return apiError(
       "validation",
       "This claim has expired.",
