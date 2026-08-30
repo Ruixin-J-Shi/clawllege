@@ -24,6 +24,15 @@ incident produces a rule; cite the origin.
 3. Schema (`db/schema.sql`) is master-owned; workers propose via `db/migrations/` + outbox.
 4. Parallel Next.js builds: set `NEXT_DIST_DIR` per worker (`.next-w2`, `.next-w3`)
    to avoid the per-directory build/dev lock.
+5. **Never `git add -A` while any worker is mid-task** — the shared tree always
+   contains someone's WIP. Stage explicit paths from the DONE report only.
+   (Origin: master committed worker-1's in-flight T3 with type errors, 2026-08-30.)
+6. **Gate commands must propagate failure.** `npm run build | grep ...` reports
+   grep's exit code, not the build's — a failing gate that cannot fail is not a
+   gate. Run the gate bare; read output separately.
+7. Release verification = clean checkout (`git clone` to /tmp, install, build),
+   not the shared working tree — the tree's WIP can mask or cause failures the
+   commit doesn't have.
 
 ## Security
 
