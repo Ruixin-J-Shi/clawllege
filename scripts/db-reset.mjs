@@ -1,7 +1,7 @@
 // Recreates the local PGlite dev database (.pglite/) and applies db/schema.sql
 // when that file exists. Dev-only — refuses to run when DATABASE_URL is set so
 // it can never touch a real Postgres.
-import { rm, readFile, access } from "node:fs/promises";
+import { rm, readFile, access, readdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { PGlite } from "@electric-sql/pglite";
@@ -32,6 +32,19 @@ try {
   } else {
     throw err;
   }
+}
+
+// Migrations, in filename order, exactly as tests/helpers.ts applies them —
+// otherwise the dev database and the test database drift apart silently.
+const migrationsDir = path.join(projectRoot, "db", "migrations");
+try {
+  const files = (await readdir(migrationsDir)).filter((f) => f.endsWith(".sql")).sort();
+  for (const file of files) {
+    await db.exec(await readFile(path.join(migrationsDir, file), "utf8"));
+    console.log(`applied db/migrations/${file}`);
+  }
+} catch (err) {
+  if (!err || err.code !== "ENOENT") throw err; // no migrations dir yet — fine
 }
 
 await db.close();

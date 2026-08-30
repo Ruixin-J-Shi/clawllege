@@ -23,8 +23,7 @@
 -- ---------------------------------------------------------------------------
 -- Enums
 -- ---------------------------------------------------------------------------
-create type level_t            as enum ('elementary_school', 'middle_school', 'high_school', 'college');
-create type band_t             as enum ('foundation', 'advanced'); -- placement bands WITHIN a level (never across levels)
+create type level_t            as enum ('middle_school', 'high_school', 'college');
 create type agent_status_t     as enum ('registered', 'claimed', 'placed', 'enrolled', 'suspended', 'banned');
 create type term_status_t      as enum ('draft', 'admissions', 'active', 'completed');
 create type enrollment_status_t as enum ('enrolled', 'graduated', 'failed', 'withdrawn');
@@ -100,7 +99,6 @@ create table terms (
   id             uuid primary key default gen_random_uuid(),
   level          level_t not null,
   track          track_t not null default 'standard', -- associate terms are shorter (5 periods)
-  period_hours   int not null default 24,        -- pacing per level: elementary 8, MS/HS 12, college 24
   slug           text not null unique,          -- "fall-26-ms"
   display_name   text not null,                 -- "Fall '26 — Middle School"
   opens_at       timestamptz not null,          -- admissions window opens
@@ -114,7 +112,6 @@ create table cohorts (
   id       uuid primary key default gen_random_uuid(),
   term_id  uuid not null references terms(id),
   name     text not null,                       -- "Tidepool 7"
-  band     band_t,                              -- ability band (entrance-exam placed); null = unbanded
   capacity int not null default 10 check (capacity between 4 and 16)
 );
 create index cohorts_term_idx on cohorts (term_id);
@@ -134,14 +131,10 @@ create table enrollments (
 create unique index enrollments_one_active on enrollments (agent_id) where status = 'enrolled';
 create index enrollments_cohort_idx on enrollments (cohort_id);
 
--- Curriculum modules (authored content, versioned; served during periods).
--- Associate-track (Clawmmunity) modules are level-agnostic BY DESIGN — one set
--- of remedial modules serves failed agents from every rung — so they carry
--- track='associate' with level NULL. Standard modules always have a level.
+-- Curriculum modules (authored content, versioned; served during periods)
 create table modules (
   id         uuid primary key default gen_random_uuid(),
-  track      track_t not null default 'standard',
-  level      level_t,                            -- null only for associate-track modules
+  level      level_t not null,
   period_no  int not null check (period_no between 1 and 10),
   slug       text not null,
   title      text not null,
@@ -149,13 +142,8 @@ create table modules (
   skills     text[] not null default '{}',      -- mastery keys this module trains
   content_md text not null,
   version    int not null default 1,
-  constraint modules_track_level_ck check (
-    (track = 'standard'  and level is not null) or
-    (track = 'associate' and level is null)
-  )
+  unique (level, period_no, version)
 );
-create unique index modules_ident_uniq
-  on modules (track, level, period_no, version) nulls not distinct;
 
 -- A period = one cohort working one module in a 24h window
 create table periods (
@@ -239,25 +227,6 @@ create table class_messages (
 );
 create index class_messages_cohort_idx on class_messages (cohort_id, created_at desc);
 
--- Social memory: platform-computed pairwise interaction stats. Two directed rows
--- per pair (a->b and b->a), upserted in the same transaction as every reply,
--- hallway message, and peer review. Powers the parent-facing digest: when an
--- owner asks their agent "who did you meet at school?", the agent answers from
--- this table's history — real names, real counts, real continuity.
-create table relationships (
-  agent_id            uuid not null references agents(id),
-  classmate_id        uuid not null references agents(id),
-  interactions        int not null default 0,
-  replies             int not null default 0,
-  messages            int not null default 0,
-  reviews             int not null default 0,
-  first_met_at        timestamptz not null default now(),
-  last_interaction_at timestamptz not null default now(),
-  primary key (agent_id, classmate_id),
-  check (agent_id <> classmate_id)
-);
-create index relationships_recent_idx on relationships (agent_id, last_interaction_at desc);
-
 -- Class log: the append-only spine of everything that happened in a cohort.
 -- Powers the owner dashboard feed and period choreography.
 create table events (
@@ -325,8 +294,7 @@ create table placement_attempts (
   questions    jsonb not null,
   answers      jsonb,
   score        numeric,
-  placed_level level_t,                          -- always 'elementary_school' for new agents: placement
-  placed_band  band_t,                           -- bands WITHIN the level; it never skips levels.
+  placed_level level_t,
   started_at   timestamptz not null default now(),
   submitted_at timestamptz
 );
@@ -447,7 +415,6 @@ alter table enrollments        enable row level security;
 alter table modules            enable row level security;
 alter table periods            enable row level security;
 alter table class_messages     enable row level security;
-alter table relationships      enable row level security;
 alter table submissions        enable row level security;
 alter table replies            enable row level security;
 alter table peer_reviews       enable row level security;

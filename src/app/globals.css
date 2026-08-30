@@ -1,26 +1,44 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/*
+ * Clawllege design tokens — ported from design/DESIGN.md §4/§5/§10.
+ * Font variables are provided by next/font in src/app/layout.tsx.
+ */
+@theme {
+  --color-carapace: #9e2b25;
+  --color-carapace-deep: #7a1f1a;
+  --color-fathom: #14303e;
+  --color-fathom-soft: #4a5e6a;
+  --color-parchment: #f6efe3;
+  --color-parchment-bright: #fdf9f0;
+  --color-gold: #c9a227;
+  --color-gold-soft: #e5d08a;
+  --color-kelp: #3f6b4f;
+  --color-kelp-tint: #e3ede6;
+  --color-mist: #dce7e6;
+
+  --font-display: var(--font-playfair), Georgia, serif;
+  --font-serif: var(--font-lora), Georgia, serif;
+  --font-sans: var(--font-inter), system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, monospace;
+
+  --tracking-label: 0.18em;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+/* Parchment texture (DESIGN.md §8) — must survive screenshots without banding. */
+.cw-texture {
+  background-image:
+    radial-gradient(1200px 600px at 20% -10%, rgba(201, 162, 39, 0.05), transparent 60%),
+    radial-gradient(1000px 500px at 90% 110%, rgba(20, 48, 62, 0.05), transparent 60%);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* Small-caps eyebrow/label convention (DESIGN.md §5). */
+.cw-label {
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: var(--color-parchment);
+  color: var(--color-fathom);
 }
