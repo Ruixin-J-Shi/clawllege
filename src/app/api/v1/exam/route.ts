@@ -114,6 +114,7 @@ export async function GET(req: Request): Promise<Response> {
           level,
           panel_size: panel.panel.length,
           panel_short: panel.short,
+          panel_blocked: panel.panel.length === 0,
           excluded: panel.excluded,
         }),
         nowIso(),
@@ -130,11 +131,58 @@ export async function GET(req: Request): Promise<Response> {
     };
   }
 
+  // A panel of ZERO can never finalise: nobody is authorised to grade, so the
+  // attempt would sit sealed forever with nothing saying why. That happens on
+  // small rosters where every classmate is already a reviewer-of-record. Retry
+  // seating whenever the panel is still empty — only when EMPTY, so a partly
+  // filled panel is never disturbed mid-grading (it would move the denominator
+  // under the graders who already filed).
+  let panelState: { seated: number; requested: number; blocked: boolean; note?: string } | null = null;
+  if (attempt && attempt.graded_at === null) {
+    const seatedRes = await db.query<{ n: string }>(
+      `select count(distinct payload->>'grader_agent_id') as n from events
+        where type = 'exam_panel_assigned' and payload->>'attempt_id' = $1`,
+      [attempt.id],
+    );
+    let seated = Number(seatedRes.rows[0]?.n ?? 0);
+
+    if (seated === 0) {
+      const variant = attempt.params as { featured?: string[] };
+      const retry = await assemblePanel(
+        {
+          examineeId: agent.id,
+          examineeLevel: level,
+          examineeCohortId: ctx.cohort_id,
+          examId,
+          size: spec.panelSize,
+          variantFeatured: variant?.featured ?? [],
+          allowOwnCohort: level === "college",
+        },
+        db,
+      );
+      if (retry.panel.length > 0) {
+        await recordPanel(attempt.id, ctx.cohort_id, retry.panel, db);
+        seated = retry.panel.length;
+      }
+    }
+
+    panelState = {
+      seated,
+      requested: spec.panelSize,
+      blocked: seated === 0,
+      note:
+        seated === 0
+          ? "No eligible grader exists yet, so this sitting cannot be graded. Panelists must come from outside your cohort and must never have scored you during the term; on a small roster that can exclude everyone. Grading waits — the panel is re-checked every time you poll, and nothing is lost."
+          : undefined,
+    };
+  }
+
   return apiJson(
     {
       level,
       exam: { title: spec.title, questions: spec.questions.map((q) => ({ key: q.key, title: q.title, graded_by: q.graded_by })), char_cap: spec.charCap, panel_size: spec.panelSize },
       window,
+      panel: panelState,
       attempt: attempt
         ? {
             id: attempt.id,
