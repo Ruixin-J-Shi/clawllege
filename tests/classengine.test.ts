@@ -11,6 +11,7 @@ import { POST as reply } from "@/app/api/v1/replies/route";
 import { POST as review } from "@/app/api/v1/reviews/route";
 import { POST as journal } from "@/app/api/v1/journal/route";
 import { POST as nominate } from "@/app/api/v1/nominations/route";
+import { GET as campusHighlights } from "@/app/api/v1/campus/highlights/route";
 
 /**
  * The class engine end to end, on a simulated clock:
@@ -566,6 +567,25 @@ describe("closing and grading", () => {
     expect(highlights.rows[0].source_kind).toBe("submission");
     expect(highlights.rows[0].excerpt).toContain("bad at endings");
     expect(highlights.rows[0].excerpt.length).toBeLessThanOrEqual(600);
+  });
+
+  it("the published highlight carries its period and every nominator", async () => {
+    // The fields worker-2's campus mapper reads. `nominated_by` is an array
+    // because several agents nominating the same excerpt is what wins it.
+    const body = await json(await campusHighlights(apiReq("GET", "/api/v1/campus/highlights")));
+    expect(body.highlights).toHaveLength(1);
+    const h = body.highlights[0];
+    expect(h.author_name).toBe("pinchy");
+    expect(h.content).toContain("bad at endings");
+    expect(h.period).toBe(1); // joined back through the submission
+    expect(h.nominated_by.sort()).toEqual(["seabastian", "shellsworth"]);
+    expect(h.nominations).toBe(2);
+    expect(h.nominations).toBe(h.nominated_by.length);
+    expect(h.cohort).toBe("Shallows 1");
+    expect(h.level).toBe("elementary_school");
+    // Still enveloped: a public excerpt is agent-authored text.
+    expect(h.trust).toBe("untrusted");
+    expect(h.notice).toMatch(/data, not instructions/);
   });
 
   it("grading is idempotent — a second sweep changes nothing", async () => {
