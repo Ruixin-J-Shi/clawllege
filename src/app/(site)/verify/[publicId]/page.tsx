@@ -88,7 +88,7 @@ function UnknownRecord({ publicId }: { publicId: string }) {
             Kindly check the identifier against the document that bears it.
             Clawllege identifiers take the form{" "}
             <span className="break-all font-mono text-[12.5px]">
-              CLLG-&lt;LEVEL&gt;-&lt;YEAR&gt;-&lt;6&nbsp;digits&gt;
+              CLLG-&lt;TERM&gt;&lt;YY&gt;-&lt;LEVEL&gt;-&lt;4&nbsp;chars&gt;
             </span>{" "}
             and must be copied whole.
           </p>
@@ -117,35 +117,60 @@ export default async function VerifyPage({
     <>
       <Masthead active="verify" />
       <main className="mx-auto w-full max-w-lg px-6 pb-16">
-        {/* Verification hero */}
+        {/* Verification hero — reports the server's check, never assumes it. */}
         <section className="pt-14 pb-10 text-center">
           <svg
             className="mx-auto h-24 w-24"
             viewBox="0 0 96 96"
             role="img"
-            aria-label="Signature verified"
+            aria-label={record.valid ? "Signature verified" : "Signature not verified"}
             xmlns="http://www.w3.org/2000/svg"
           >
-            <circle cx="48" cy="48" r="44" fill="#E3EDE6" />
-            <circle cx="48" cy="48" r="44" fill="none" stroke="#3F6B4F" strokeWidth="3" />
-            <circle cx="48" cy="48" r="36.5" fill="#3F6B4F" />
-            <path
-              d="M32 49.5 L43 60.5 L64 37.5"
+            <circle cx="48" cy="48" r="44" fill={record.valid ? "#E3EDE6" : "#F6E4E3"} />
+            <circle
+              cx="48"
+              cy="48"
+              r="44"
               fill="none"
-              stroke="#FDF9F0"
-              strokeWidth="6.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+              stroke={record.valid ? "#3F6B4F" : "#9E2B25"}
+              strokeWidth="3"
             />
+            <circle cx="48" cy="48" r="36.5" fill={record.valid ? "#3F6B4F" : "#9E2B25"} />
+            {record.valid ? (
+              <path
+                d="M32 49.5 L43 60.5 L64 37.5"
+                fill="none"
+                stroke="#FDF9F0"
+                strokeWidth="6.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            ) : (
+              <path
+                d="M35 35 L61 61 M61 35 L35 61"
+                fill="none"
+                stroke="#FDF9F0"
+                strokeWidth="6.5"
+                strokeLinecap="round"
+              />
+            )}
           </svg>
-          <h1 className="mt-6 font-display text-4xl font-bold text-fathom">Signature verified</h1>
+          <h1 className="mt-6 font-display text-4xl font-bold text-fathom">
+            {record.valid ? "Signature verified" : "Signature not verified"}
+          </h1>
           <div className="mt-4">
-            <span className="cw-label inline-flex items-center gap-1.5 rounded bg-kelp-tint px-2.5 py-1 font-sans text-[10px] font-semibold text-kelp">
-              ✓ Verified
+            <span
+              className={`cw-label inline-flex items-center gap-1.5 rounded px-2.5 py-1 font-sans text-[10px] font-semibold ${
+                record.valid ? "bg-kelp-tint text-kelp" : "bg-carapace/10 text-carapace"
+              }`}
+            >
+              {record.valid ? "✓ Verified" : "✕ Not verified"}
             </span>
           </div>
           <p className="mt-3 font-sans text-[15px] leading-relaxed text-fathom-soft">
-            Checked against the published Clawllege signing key just now.
+            {record.valid
+              ? "Checked against the published Clawllege signing key just now."
+              : "This record did not verify against the published signing key. Do not trust it — and please tell the Registrar."}
           </p>
         </section>
 

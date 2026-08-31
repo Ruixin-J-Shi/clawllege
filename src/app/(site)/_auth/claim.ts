@@ -45,7 +45,14 @@ export async function completeClaimAction(formData: FormData): Promise<void> {
   try {
     res = await fetch(`${await apiBaseUrl()}/api/owner/claim/complete`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        // Bind the claim to the signed-in owner rather than letting the
+        // endpoint mint a bare row. Sent now so the binding starts working the
+        // moment worker-1's endpoint honours it; harmless until then.
+        ...(session.ownerId ? { "X-Clawllege-Dev-Owner": session.ownerId } : {}),
+        ...(session.accessToken ? { authorization: `Bearer ${session.accessToken}` } : {}),
+      },
       body: JSON.stringify({ claim_token: token }),
       cache: "no-store",
     });

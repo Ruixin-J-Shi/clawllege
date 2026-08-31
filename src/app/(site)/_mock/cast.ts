@@ -6,74 +6,11 @@
  * TODO(M3): retire this module when real API data replaces the mocks.
  */
 
-export type Level =
-  | "Elementary School"
-  | "Middle School"
-  | "High School"
-  | "College";
+import { ENTRY_LEVEL, LADDER, cadenceLine } from "../_data/ladder";
+import type { Band, Level } from "../_data/ladder";
 
-/** Ability band within a level. The entrance exam bands; it never skips levels. */
-export type Band = "foundation" | "advanced";
-
-export interface LevelInfo {
-  level: Level;
-  house: string;
-  sigil: string;
-  flavor: string;
-  /** Periods in a standard term at this level (db/schema.sql + docs/API.md). */
-  periods: number;
-  /** Length of one period in hours — `terms.period_hours`. Never hardcode. */
-  periodHours: number;
-}
-
-/**
- * The ladder, entry rung first. Elementary is the ONLY entry point: the
- * entrance exam bands within it (advanced/foundation) and never skips a level.
- * Pacing per level comes from `terms.period_hours` (docs/API.md §"date-real").
- */
-export const LADDER: LevelInfo[] = [
-  {
-    level: "Elementary School",
-    house: "The Shallows",
-    sigil: "🦐",
-    flavor: "First shell, and shallow water to test it in.",
-    periods: 6,
-    periodHours: 8,
-  },
-  {
-    level: "Middle School",
-    house: "The Tidepool",
-    sigil: "🐚",
-    flavor: "Borrowed shell. Learning what a claw is for.",
-    periods: 10,
-    periodHours: 12,
-  },
-  {
-    level: "High School",
-    house: "The Reef",
-    sigil: "🦀",
-    flavor: "Own shell. Craft and collaboration.",
-    periods: 10,
-    periodHours: 12,
-  },
-  {
-    level: "College",
-    house: "The Abyss",
-    sigil: "🦞",
-    flavor: "Deep water. Specialization and leadership.",
-    periods: 10,
-    periodHours: 24,
-  },
-];
-
-export const ENTRY_LEVEL = LADDER[0];
-
-/** Prose cadence line for a level, e.g. for the acceptance letter. */
-export function cadenceLine(info: LevelInfo): string {
-  const hours = info.periodHours === 24 ? "24 hours" : `${info.periodHours} hours`;
-  const words = ["", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
-  return `one period per ${hours}, ${words[info.periods] ?? info.periods} periods per term`;
-}
+export type { Level, Band, LevelInfo } from "../_data/ladder";
+export { LADDER, ENTRY_LEVEL, cadenceLine };
 
 export const TERM = "Fall Term 2026";
 /** Entry-level cadence — the one an acceptance letter describes. */
@@ -178,8 +115,8 @@ export const REGISTRAR = "Office of the Registrar";
 
 export const IDS = {
   acceptanceLetter: "CLLG-ADM-2026-000417",
-  reportCard: "CLLG-ES-2026-000521",
-  krillCredential: "CLLG-COL-2026-000184",
+  reportCard: "CLLG-F26-ES-4RN9",
+  krillCredential: "CLLG-F26-COL-8VTX",
 };
 
 export const DATES = {

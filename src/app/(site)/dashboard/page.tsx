@@ -153,6 +153,33 @@ function FeedEntryBody({ entry }: { entry: FeedEntry }) {
           </p>
         </>
       );
+    // Live entries from the owner API. Plainer than the hand-authored variants
+    // above because the endpoint carries fewer fields — see _data/dashboard.ts.
+    case "plain":
+      return (
+        <>
+          <EntryLabel period={entry.period} time={entry.time} kindLabel={entry.kindLabel} />
+          <div className="mt-1.5 flex items-start gap-3">
+            <FeedAvatar initial={entry.avatarInitial} />
+            <div className="min-w-0 flex-1">
+              <p className="text-[13.5px] text-fathom leading-snug">
+                <span className="font-semibold">{entry.author}</span>
+                {entry.headlineRest ? ` ${entry.headlineRest}` : null}
+              </p>
+              {entry.body ? (
+                <div
+                  className="mt-1.5 rounded-sm border border-fathom/10 bg-parchment px-3 py-2"
+                  {...(entry.trustNotice ? { title: entry.trustNotice } : {})}
+                >
+                  <p className="font-serif text-[13.5px] text-fathom leading-relaxed">
+                    {entry.body}
+                  </p>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </>
+      );
   }
 }
 
@@ -172,9 +199,13 @@ export default async function DashboardPage() {
     scholar: SCHOLAR,
     nextActions: NEXT_ACTIONS,
     actionsFootnote: ACTIONS_FOOTNOTE,
-  } = await getDashboard(
-    session?.accessToken ? { accessToken: session.accessToken } : undefined,
-  );
+    unauthorized,
+  } = await getDashboard({
+    ownerId: session?.ownerId,
+    accessToken: session?.accessToken,
+    email: session?.email,
+  });
+  if (unauthorized) redirect("/login?next=%2Fdashboard");
   return (
     <>
       <Masthead active="dashboard" session={session} />
@@ -259,6 +290,7 @@ export default async function DashboardPage() {
                   </span>
                 </div>
 
+                {SCHOLAR.mastery.length > 0 ? (
                 <div className="mt-6 pt-5 border-t border-gold/40 space-y-4">
                   <p className="cw-label text-[10px] font-semibold text-fathom-soft">
                     Mastery snapshot
@@ -288,6 +320,7 @@ export default async function DashboardPage() {
                     );
                   })}
                 </div>
+                ) : null}
 
                 <div className="mt-6 space-y-2.5">
                   <Link
@@ -307,6 +340,7 @@ export default async function DashboardPage() {
               </section>
 
               {/* Next actions due */}
+              {NEXT_ACTIONS.length > 0 ? (
               <section className="bg-parchment-bright border border-fathom/10 rounded-lg p-6 shadow-[0_10px_40px_rgba(20,48,62,0.06)]">
                 <p className="cw-label text-[11px] font-semibold text-fathom-soft mb-4">
                   Next actions due
@@ -336,6 +370,7 @@ export default async function DashboardPage() {
                   {ACTIONS_FOOTNOTE}
                 </p>
               </section>
+              ) : null}
             </aside>
 
             {/* Main column: private class feed */}
@@ -360,8 +395,8 @@ export default async function DashboardPage() {
 
               <div className="bg-mist/40 px-6 py-6">
                 <ol className="relative border-l border-fathom/15 ml-4 space-y-7">
-                  {FEED_ENTRIES.map((entry) => (
-                    <li key={`${entry.time}-${entry.kind}`} className="relative pl-6">
+                  {FEED_ENTRIES.map((entry, i) => (
+                    <li key={`${i}-${entry.period}-${entry.kind}`} className="relative pl-6">
                       <span
                         className={`absolute -left-[5px] top-1.5 w-2.5 h-2.5 rounded-full ring-4 ring-mist/60 ${DOT_CLASS[entry.dot]}`}
                       />

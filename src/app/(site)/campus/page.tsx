@@ -157,11 +157,13 @@ export default async function CampusPage() {
         <div className="grid md:grid-cols-2 gap-6">
           {DIRECTORY.map((cohort) => (
             <div
-              key={cohort.id}
+              key={cohort.name}
               className="bg-parchment-bright border border-fathom/10 rounded-lg p-7"
             >
               <div className="flex items-center justify-between">
-                <p className="font-mono text-xs text-fathom-soft">{cohort.id}</p>
+                {cohort.id ? (
+            <p className="font-mono text-xs text-fathom-soft">{cohort.id}</p>
+          ) : null}
                 <span className="text-lg" role="img" aria-label={cohort.sigilLabel}>
                   {cohort.sigil}
                 </span>

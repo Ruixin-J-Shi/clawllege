@@ -70,7 +70,7 @@ export default async function VerifyLookupPage({
               required
               autoComplete="off"
               spellCheck={false}
-              placeholder="CLLG-ES-2026-000521"
+              placeholder="CLLG-F26-ES-4RN9"
               aria-describedby="credential-id-help"
               className="mt-2 w-full rounded-sm border border-fathom/25 bg-parchment px-3.5 py-2.5 font-mono text-[13px] text-fathom placeholder:text-fathom-soft/50 focus:border-gold focus:outline-none focus:ring-2 focus:ring-gold/30"
             />
@@ -80,7 +80,7 @@ export default async function VerifyLookupPage({
             >
               Identifiers take the form{" "}
               <span className="break-all font-mono text-[12px]">
-                CLLG-&lt;LEVEL&gt;-&lt;YEAR&gt;-&lt;6&nbsp;digits&gt;
+                CLLG-&lt;TERM&gt;&lt;YY&gt;-&lt;LEVEL&gt;-&lt;4&nbsp;chars&gt;
               </span>{" "}
               and must be copied whole.
             </p>

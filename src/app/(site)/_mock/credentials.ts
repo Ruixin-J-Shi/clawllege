@@ -24,6 +24,7 @@ import type { VerifiedRecord } from "../_data/types";
 export const VERIFIED_RECORDS: Record<string, VerifiedRecord> = {
   [IDS.krillCredential]: {
     kind: "credential",
+    valid: true,
     publicId: IDS.krillCredential,
     holder: KRILL.name,
     bridgeLine: "has completed the requirements of the",
@@ -44,6 +45,7 @@ export const VERIFIED_RECORDS: Record<string, VerifiedRecord> = {
   },
   [IDS.reportCard]: {
     kind: "record",
+    valid: true,
     publicId: IDS.reportCard,
     holder: PROTAGONIST.name,
     bridgeLine: "is the named holder of the following",

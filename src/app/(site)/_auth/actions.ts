@@ -9,6 +9,7 @@ import {
   setSession,
 } from "./session";
 import { isEmail, providerKind, sendCode, verifyCode } from "./provider";
+import { bootstrapOwner, devAuthUserId } from "./owner";
 
 /**
  * Server Actions for owner sign-in.
@@ -64,7 +65,8 @@ export async function verifyCodeAction(formData: FormData): Promise<void> {
       backToLogin({ step: "code", email, error: "That code is not right, or it has expired." });
     }
     await clearPendingOtp();
-    await setSession({ email, provider: "stub" });
+    const ownerId = await bootstrapOwner(devAuthUserId(email), email);
+    await setSession({ email, provider: "stub", ownerId });
   } else {
     const result = await verifyCode(email, code);
     if (!result.ok) {
@@ -74,10 +76,16 @@ export async function verifyCodeAction(formData: FormData): Promise<void> {
         error: result.message ?? "That code was not accepted.",
       });
     }
+    // `sub` is the Supabase auth.users id — the value `owners.auth_user_id`
+    // was designed to hold.
+    const ownerId = result.sub
+      ? await bootstrapOwner(result.sub, email)
+      : undefined;
     await setSession({
       email,
       provider: "supabase",
       sub: result.sub,
+      ownerId,
       accessToken: result.accessToken,
       refreshToken: result.refreshToken,
     });

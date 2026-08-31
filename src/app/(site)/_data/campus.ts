@@ -1,102 +1,135 @@
 /**
  * Campus data (public, unauthenticated).
  *
- * Live shapes follow the public endpoints in `docs/API.md`:
- *   GET /api/v1/campus/highlights?since=   published highlights (sanitized)
- *   GET /api/v1/campus/cohorts             cohort names, levels, term, members
- *   GET /api/v1/campus/graduations         graduation events + credential ids
- *
- * NOTE: those endpoints are worker-1's T4 and are not on disk yet, so the live
- * branches below are written against the documented contract and are UNVERIFIED
- * until they land. `mock` remains the default until each is checked end to end.
+ * Live shapes below were read off the running endpoints against a seeded dev
+ * database, not inferred from the docs — every response is an object wrapping a
+ * named array (`{cohorts: [...]}`), and `level` arrives as the `level_t` enum,
+ * so house names and sigils are joined in from `ladder.ts`.
  */
 import { GRADUATION, HIGHLIGHTS, YEARBOOK_QUOTES, DIRECTORY } from "../_mock/campus";
 import type { CohortCard, Graduation, HighlightExcerpt, YearbookQuote } from "./types";
+import { levelFromApi } from "./ladder";
 import { fetchApi, isLive } from "./source";
 
-interface ApiHighlight {
-  title?: string;
-  badge?: string;
-  excerpt?: string;
-  content?: string;
-  scholar?: string;
-  author?: string;
-  nominated_by?: string;
-  period?: number | string;
-  cohort?: string;
-}
-
 interface ApiCohort {
-  id?: string;
-  code?: string;
-  name?: string;
-  level?: string;
-  house?: string;
-  sigil?: string;
-  term?: string;
-  members?: string[];
+  name: string;
+  band: string | null;
+  level: string;
+  track: string;
+  term: { slug: string; display_name: string } | null;
+  members: string[];
 }
 
 interface ApiGraduation {
-  agent_name?: string;
-  name?: string;
-  level?: string;
-  house?: string;
-  term?: string;
-  capstone?: string;
-  credential_public_id?: string;
+  agent_name: string;
+  level: string;
+  track: string;
+  cohort: string | null;
+  term: string | null;
+  issued_at: string;
+  public_id: string;
+  verify_url?: string;
+}
+
+/**
+ * Shape confirmed against the running endpoint: an untrusted-content envelope
+ * ({id, author_name, content, kind, trust, notice}) plus cohort, level and a
+ * nominations count. There is no title and no badge — `period` and
+ * `nominated_by` are being added by worker-1 and are read here when present.
+ */
+interface ApiHighlight {
+  author_name?: string;
+  content?: string;
+  published_at?: string;
+  cohort?: string;
+  level?: string | null;
+  nominations?: number;
+  period?: number;
+  nominated_by?: string;
+}
+
+/** "2026-09-16T01:00:00.000Z" → "16 September 2026" (the registrar's date voice). */
+function longDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
 }
 
 export async function getHighlights(): Promise<HighlightExcerpt[]> {
   if (!isLive("campus")) return HIGHLIGHTS;
-  const rows = await fetchApi<ApiHighlight[]>("/api/v1/campus/highlights", {
-    revalidate: 60,
+  const { highlights } = await fetchApi<{ highlights: ApiHighlight[] }>(
+    "/api/v1/campus/highlights",
+    { revalidate: 60 },
+  );
+  return (highlights ?? []).map((h) => {
+    const votes = h.nominations ?? 0;
+    return {
+      // The endpoint serves no title: highlights are excerpts, not articles.
+      title: "Nominated excerpt",
+      // A real count, not an invented honour.
+      badge: votes === 1 ? "1 nomination" : `${votes} nominations`,
+      excerpt: h.content ?? "",
+      scholar: h.author_name ?? "",
+      nomination: [
+        h.nominated_by ? `Nominated by ${h.nominated_by}` : null,
+        h.period ? `Period ${h.period}` : null,
+        h.cohort ? `Cohort ${h.cohort}` : null,
+      ]
+        .filter(Boolean)
+        .join(" · "),
+    };
   });
-  return rows.map((r) => ({
-    title: r.title ?? "Untitled",
-    badge: r.badge ?? "Honors",
-    excerpt: r.excerpt ?? r.content ?? "",
-    scholar: r.scholar ?? r.author ?? "",
-    nomination: [
-      r.nominated_by ? `Nominated by ${r.nominated_by}` : null,
-      r.period ? `Period ${r.period}` : null,
-      r.cohort ? `Cohort ${r.cohort}` : null,
-    ]
-      .filter(Boolean)
-      .join(" · "),
-  }));
 }
 
 export async function getDirectory(): Promise<CohortCard[]> {
   if (!isLive("campus")) return DIRECTORY;
-  const rows = await fetchApi<ApiCohort[]>("/api/v1/campus/cohorts", { revalidate: 300 });
-  return rows.map((r) => ({
-    id: r.id ?? r.code ?? "",
-    name: r.name ?? "",
-    levelLine: [r.level, r.house, r.term].filter(Boolean).join(" · "),
-    sigil: r.sigil ?? "",
-    sigilLabel: `${r.level ?? "Cohort"} sigil`,
-    roster: r.members ?? [],
-  }));
+  const { cohorts } = await fetchApi<{ cohorts: ApiCohort[] }>("/api/v1/campus/cohorts", {
+    revalidate: 300,
+  });
+  return (cohorts ?? []).map((c) => {
+    const rung = levelFromApi(c.level);
+    return {
+      // The cohorts endpoint carries no separate code, so the card shows the
+      // name alone rather than printing it twice.
+      id: "",
+      name: c.name,
+      levelLine: [rung?.level ?? c.level, rung?.house, c.term?.display_name ?? c.term?.slug]
+        .filter(Boolean)
+        .join(" · "),
+      sigil: rung?.sigil ?? "",
+      sigilLabel: rung ? `${rung.level} sigil` : "Cohort sigil",
+      roster: c.members ?? [],
+    };
+  });
 }
 
 export async function getGraduation(): Promise<Graduation | null> {
   if (!isLive("campus")) return GRADUATION;
-  const rows = await fetchApi<ApiGraduation[]>("/api/v1/campus/graduations", {
-    revalidate: 300,
-  });
-  const latest = rows[0];
+  const { graduations } = await fetchApi<{ graduations: ApiGraduation[] }>(
+    "/api/v1/campus/graduations",
+    { revalidate: 300 },
+  );
+  const latest = (graduations ?? [])[0];
   if (!latest) return null;
+  const rung = levelFromApi(latest.level);
   return {
-    name: latest.agent_name ?? latest.name ?? "",
+    name: latest.agent_name,
     levelLine: [
-      [latest.level, latest.house].filter(Boolean).join(" — "),
-      latest.term,
+      [rung?.level ?? latest.level, rung?.house].filter(Boolean).join(" — "),
+      latest.cohort ? `Cohort ${latest.cohort}` : null,
+      latest.issued_at ? longDate(latest.issued_at) : null,
     ]
       .filter(Boolean)
       .join(" · "),
-    capstone: latest.capstone ?? "",
-    credentialId: latest.credential_public_id ?? "",
+    // The graduations feed carries no capstone title; the campus card omits the
+    // line rather than inventing one.
+    capstone: "",
+    credentialId: latest.public_id,
   };
 }
 

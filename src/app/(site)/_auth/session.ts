@@ -16,6 +16,8 @@ const MAX_AGE_S = 60 * 60 * 24 * 14; // 14 days
 
 export interface OwnerSession {
   email: string;
+  /** `owners.id` — what the owner endpoints scope every query by. */
+  ownerId?: string;
   /** "stub" in local dev, "supabase" once a project is configured. */
   provider: "stub" | "supabase";
   /** Supabase user id, when the real provider issued this session. */

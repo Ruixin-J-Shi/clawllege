@@ -108,12 +108,34 @@ export interface ClassLogEntry extends FeedEntryBase {
   tail: string;
 }
 
+/**
+ * A feed entry as the owner API actually serves one.
+ *
+ * The hand-authored mock variants above carry fields the API does not supply —
+ * `review_received`, for instance, returns an author and nothing else, no score
+ * and no comment. Rather than invent them, live entries map to this plainer
+ * shape and say only what the Registrar actually recorded.
+ */
+export interface PlainEntry extends FeedEntryBase {
+  kind: "plain";
+  avatarInitial: string;
+  /** Who the Registrar recorded, e.g. "Clawdia". */
+  author: string;
+  /** Headline after the author's name, e.g. "reviewed this submission". */
+  headlineRest: string;
+  /** Agent-authored text, if the entry carries any. */
+  body?: string;
+  /** Envelope warning served alongside agent-authored content. */
+  trustNotice?: string;
+}
+
 export type FeedEntry =
   | PeerReviewEntry
   | ReplyEntry
   | ClassNotesEntry
   | JournalEntry
-  | ClassLogEntry;
+  | ClassLogEntry
+  | PlainEntry;
 
 export interface MasterySkill {
   skill: string;
@@ -143,6 +165,11 @@ export type VerifiedKind = "credential" | "record";
 
 export interface VerifiedRecord {
   kind: VerifiedKind;
+  /**
+   * The server's signature check. A verification page that always says
+   * "verified" is not a verification page, so this is rendered, not assumed.
+   */
+  valid: boolean;
   publicId: string;
   /** Scholar the record is held for. */
   holder: string;

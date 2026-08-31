@@ -60,13 +60,18 @@ export async function apiBaseUrl(): Promise<string> {
 }
 
 export class ApiError extends Error {
-  constructor(
-    readonly path: string,
-    readonly status: number,
-    message: string,
-  ) {
+  // Plain fields rather than TypeScript parameter properties: node's
+  // type-stripping loader cannot parse the latter, and being importable by
+  // plain node is what lets these mappers be checked against a live API
+  // without standing up a page server.
+  readonly path: string;
+  readonly status: number;
+
+  constructor(path: string, status: number, message: string) {
     super(message);
     this.name = "ApiError";
+    this.path = path;
+    this.status = status;
   }
 }
 
