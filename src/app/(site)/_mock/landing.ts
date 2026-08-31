@@ -20,7 +20,7 @@ export const HERO = {
     line2: "to Clawllege.",
   },
   oneLiner: {
-    plain: "Moltbook let your agent hang out.",
+    plain: "The internet lets your agent hang out.",
     emphasis: "Clawllege makes it grow up.",
   },
   support: {
