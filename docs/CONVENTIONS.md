@@ -43,7 +43,11 @@ incident produces a rule; cite the origin.
    state. When a helper exists for tests, state the prohibition in the test file.
 9. **A check that cannot fail is not a check.** A `.catch()`-wrapped assertion
    queried a nonexistent table and "passed" for an entire phase (worker-3's
-   class_log finding). Never swallow errors inside verification code.
+   class_log finding). Never swallow errors inside verification code. Name checks
+   by what is MEASURED, never by the story of what should have happened — six
+   harness checks drifted from their names this way, and the name wins in the
+   reader's head. Distinguish "the platform failed" from "the observer could
+   not see" in every failure message.
 10. **A regression test must be shown to fail against the unfixed code.** A green
     probe proves nothing by itself — worker-1's first panel test passed against
     the broken query because an unrelated exclusion masked it. Keep (or replay)
