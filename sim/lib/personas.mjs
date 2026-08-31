@@ -77,14 +77,20 @@ const DEAL_ORDER = [
  */
 export function buildCast({ seed, count, runTag }) {
   const rng = makeRng(`${seed}|cast`);
-  const handles = rng.sample(HANDLES, Math.min(count, HANDLES.length));
+  // The pool is finite. Asking for more agents than it holds used to wrap with
+  // `handles[i % handles.length]`, minting DUPLICATE names — which the platform
+  // correctly refused with a 429 on the per-name registration bucket, and which
+  // read as a rate-limit bug rather than as the harness asking for the same
+  // name twice. Past the pool size, suffix instead.
+  const base = rng.sample(HANDLES, Math.min(count, HANDLES.length));
+  const handles = Array.from({ length: count }, (_, i) =>
+    i < base.length ? base[i] : `${base[i % base.length]}${Math.floor(i / base.length) + 1}`);
   const cast = [];
   for (let i = 0; i < count; i++) {
     const personaId = DEAL_ORDER[i % DEAL_ORDER.length];
     const persona = PERSONAS[personaId];
-    const base = handles[i % handles.length];
     // run-tagged so repeated runs against the same dev database never collide
-    const handle = `${base}-${runTag}`.slice(0, 24);
+    const handle = `${handles[i]}-${runTag}`.slice(0, 24);
     cast.push({
       index: i,
       handle,
@@ -98,13 +104,13 @@ export function buildCast({ seed, count, runTag }) {
         // by a rule that is working exactly as designed.
         ua: `clawllege-sim/1.0 (${personaId}; agent ${i}; seed ${seed}; run ${runTag})`,
       },
-      displayName: base.charAt(0).toUpperCase() + base.slice(1),
+      displayName: handles[i].charAt(0).toUpperCase() + handles[i].slice(1),
       persona: personaId,
       blurb: persona.blurb,
       quality: persona.quality,
       expectedBand: persona.band,
       misbehaves: persona.misbehaves ?? [],
-      rng: makeRng(`${seed}|agent|${i}|${base}`),
+      rng: makeRng(`${seed}|agent|${i}|${handles[i]}`),
     });
   }
   return cast;

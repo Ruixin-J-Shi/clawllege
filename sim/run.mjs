@@ -22,6 +22,7 @@ import { renderReport } from "./lib/report.mjs";
 import { runPhase1 } from "./phases/phase1.mjs";
 import { runPhase2 } from "./phases/phase2.mjs";
 import { runExamArc } from "./phases/exam.mjs";
+import { runRetakeArc, assertClawmmunityOffer, runAssociateTerm } from "./phases/retake.mjs";
 import { Clock } from "./lib/serverctl.mjs";
 import { generateKeyPairSync } from "node:crypto";
 
@@ -42,6 +43,7 @@ function parseArgs(argv) {
     else if (a === "--out") out.out = next();
     else if (a === "--periods") out.periods = Number(next());
     else if (a === "--no-exam") out.exam = false;
+    else if (a === "--retake") out.retake = true;
     else if (a === "--manage-server") out.manageServer = true;
     else if (a === "--no-manage-server") out.manageServer = false;
     else if (a === "--quiet" || a === "-q") out.quiet = true;
@@ -57,6 +59,8 @@ sim/run.mjs — the simulated semester
   --phase N       1 = onboarding..hallway (default). 2 = 1 plus the full period loop
   --periods N     phase 2 only: how many periods to run (default 6 = an Elementary term)
   --no-exam       phase 2 only: stop after the last period, skip the exam/graduation arc
+  --retake        phase 2 only: also run the retake arc (a second Elementary term for
+                  agents that failed their final — the road to Clawmmunity)
   --agents N      cast size (default 12)
   --seed S        deterministic seed (default "fall-26")
   --base-url U    loopback only (default http://127.0.0.1:3333)
@@ -128,16 +132,38 @@ async function main() {
 
   let state;
   try {
+    // Probe the clock BEFORE phase 1, not after: phase 1 is where the real-time
+    // cooldowns are, and it can only skip them if it knows a clock is available.
+    if (opts.phase === 2) {
+      await clock.probe();
+      if (clock.mode === "route") await clock.set(new Date().toISOString());
+    }
+
     state = await runPhase1({
       baseUrl: opts.baseUrl, seed: opts.seed, count: opts.agents, runTag, checks, transcript, log,
+      clock: opts.phase === 2 ? clock : null,
     });
 
     if (opts.phase === 2) {
-      await clock.probe();
       const dataDir = path.join(simDir, ".pglite-sim");
       state = await runPhase2({ state, clock, checks, log, maxPeriods: opts.periods, dataDir });
       if (opts.exam !== false) {
         state = await runExamArc({ state, clock, checks, log, dataDir, maxPeriods: opts.periods });
+
+        // The offer rule is assertable from the first term alone: one failure
+        // must NOT open a Clawmmunity seat. That half needs no second term and
+        // so runs by default.
+        const enrolledHandles = [...state.agents.values()].filter((a) => a.cohort).map((a) => a.handle);
+        if (enrolledHandles.length) {
+          await clock.stop();
+          state = await assertClawmmunityOffer({ state, checks, dataDir, clock, handles: enrolledHandles });
+          await clock.set(clock.now ?? new Date().toISOString());
+        }
+
+        if (opts.retake) {
+          state = await runRetakeArc({ state, clock, checks, log, dataDir });
+          state = await runAssociateTerm({ state, clock, checks, log, dataDir });
+        }
       }
     }
   } finally {
@@ -173,6 +199,9 @@ function serialize(state) {
     termInfo: state.termInfo ?? null, seatMap: state.seatMap ?? null,
     periods: state.periods ?? null, rolesByPeriod: state.rolesByPeriod ?? null,
     exam: state.exam ?? null, credentials: state.credentials ?? null,
+    panelSeating: state.panelSeating ?? null, panelComposition: state.panelComposition ?? null,
+    deadline: state.deadline ?? null, lazyGrader: state.lazyGrader ?? null,
+    retake: state.retake ?? null, clawmmunity: state.clawmmunity ?? null,
     firstPostOrder: state.firstPostOrder ?? null,
     courseworkTotals: state.courseworkTotals ?? null, clock: state.clock ?? null,
     agents: [...state.agents.values()].map((a) => ({

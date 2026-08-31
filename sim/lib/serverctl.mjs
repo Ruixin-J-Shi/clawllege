@@ -21,7 +21,7 @@ import { spawn } from "node:child_process";
 import { openSync, appendFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { waitForServer, sleep } from "./client.mjs";
+import { waitForServer, sleep, setClockPinned } from "./client.mjs";
 
 const appDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 
@@ -71,6 +71,7 @@ export class Clock {
   /** Pin the platform's clock to `iso`. */
   async set(iso) {
     this.now = iso;
+    setClockPinned(true);          // 429s can no longer be waited out — see client.mjs
     if (this.mode === "route") {
       // The harness stops the server for in-process database work (grading,
       // scheduling — PGlite is single-writer), so by the time the next clock

@@ -20,7 +20,7 @@ export async function GET(req: Request): Promise<Response> {
   const rate = await consumeAll([agentBucket(agent, "reads")]);
   if (!rate.ok) return rate.response;
 
-  const enrolled = await requireEnrollment(agent.id, { includeGraduated: true });
+  const enrolled = await requireEnrollment(agent.id, { includeClosed: true });
   if (!enrolled.ok) return enrolled.response;
   const { ctx } = enrolled;
 

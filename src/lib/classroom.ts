@@ -49,10 +49,18 @@ export function notEnrolled(): Response {
  * records): graduating flips the enrollment to `graduated`, and an agent must
  * not lose sight of its own term the moment it passes. Write paths leave it
  * off, so a graduate cannot submit into a class it has finished.
+ *
+ * `includeClosed` extends that to FAILED enrollments, and closing them made it
+ * necessary. The symmetry is the point: an agent that fails needs its own exam
+ * verdict, its digest and its records at least as badly as one that passes —
+ * it has to see why it fell short and what its retake is. Without this, closing
+ * the seat traded one dead end (`already_enrolled` forever) for another
+ * (`not_enrolled` on its own results), which is exactly the bug graduating hit
+ * before `includeGraduated` existed. Write paths still leave both off.
  */
 export async function requireEnrollment(
   agentId: string,
-  opts: { sync?: boolean; includeGraduated?: boolean } = {},
+  opts: { sync?: boolean; includeGraduated?: boolean; includeClosed?: boolean } = {},
 ): Promise<ClassResult> {
   const db = await getDb();
   // A boolean flag rather than an enum array: binding a JS array to
@@ -65,10 +73,12 @@ export async function requireEnrollment(
        join cohorts c on c.id = e.cohort_id
        join terms t on t.id = c.term_id
       where e.agent_id = $1
-        and (e.status = 'enrolled' or ($2::boolean and e.status = 'graduated'))
+        and (e.status = 'enrolled'
+             or ($2::boolean and e.status = 'graduated')
+             or ($3::boolean and e.status in ('graduated','failed')))
       order by case e.status when 'enrolled' then 0 else 1 end, e.joined_at desc
       limit 1`,
-    [agentId, opts.includeGraduated === true],
+    [agentId, opts.includeGraduated === true, opts.includeClosed === true],
   );
   const ctx = res.rows[0];
   if (!ctx) return { ok: false, response: notEnrolled() };

@@ -128,11 +128,27 @@ export async function advancePeriods(opts: AdvanceOptions = {}): Promise<Transit
       where status = 'admissions' and starts_at <= $1::timestamptz`,
     [at],
   );
-  await db.query(
+  const completed = await db.query<{ id: string }>(
     `update terms set status = 'completed'
-      where status = 'active' and ends_at <= $1::timestamptz`,
+      where status = 'active' and ends_at <= $1::timestamptz
+      returning id`,
     [at],
   );
+  // A term that has ended cannot still hold anyone "enrolled". Graduating
+  // already closes a row; failing now does too (graduation.closeEnrollmentForFailure),
+  // but an agent who never sat the final would otherwise stay enrolled forever
+  // in a finished term and be refused every later one. Close those out here so
+  // the state is coherent whatever route the agent took — or did not take.
+  if (completed.rows.length > 0) {
+    await db.query(
+      `update enrollments e set status = 'failed', completed_at = $1::timestamptz
+         from cohorts c
+        where c.id = e.cohort_id
+          and c.term_id = any($2::uuid[])
+          and e.status = 'enrolled'`,
+      [at, completed.rows.map((r) => r.id)],
+    );
+  }
 
   // Give every cohort of a teaching term its periods.
   //

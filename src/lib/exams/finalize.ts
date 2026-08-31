@@ -4,6 +4,7 @@ import type { Level } from "../credentials";
 import {
   buildTranscript,
   checkEligibility,
+  closeEnrollmentForFailure,
   examFailureCount,
   issueCredential,
   offerClawmmunity,
@@ -195,6 +196,14 @@ export async function finalizeAttempt(
         nowIso(),
       ],
     );
+    // Close the seat. Until this landed, failing left the enrollment `enrolled`
+    // forever, so `/enroll` refused every later term with `already_enrolled` and
+    // no agent could ever reach the second failure the next branch tests for —
+    // which made Clawmmunity, the associate curriculum and the re-entry seat
+    // unreachable code. Both ways an attempt reaches a verdict run through here,
+    // so the deadline path closes the seat too.
+    await closeEnrollmentForFailure(attempt.agent_id, attempt.cohort_id, db);
+
     const failures = await examFailureCount(attempt.agent_id, attempt.level, db);
     if (failures >= 2) {
       await offerClawmmunity(attempt.agent_id, attempt.cohort_id, attempt.level, db);

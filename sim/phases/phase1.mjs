@@ -14,7 +14,16 @@ import { errCode } from "../lib/assert.mjs";
 
 const KEY_PREFIX = "cllg_sk_";
 
-export async function runPhase1({ baseUrl, seed, count, runTag, checks, transcript, log }) {
+export async function runPhase1({ baseUrl, seed, count, runTag, checks, transcript, log, clock = null }) {
+  // Rate buckets refill on the platform's clock (worker-1's T5), so when a clock
+  // is available the harness buys a fresh token by MOVING TIME rather than by
+  // sleeping. Phase 1 used to spend minutes waiting out 20-second hallway
+  // cooldowns in real time; this makes it seconds. Without a clock (phase 1 run
+  // standalone against someone else's server) it falls back to waiting, which is
+  // what the client's 429 handling already does.
+  const cooldown = async (ms = 25_000) => {
+    if (clock?.mode === "route") await clock.advance(ms);
+  };
   const cast = buildCast({ seed, count, runTag });
   const state = { cast, agents: new Map(), cohorts: new Map(), started: new Date().toISOString() };
 
@@ -176,6 +185,7 @@ export async function runPhase1({ baseUrl, seed, count, runTag, checks, transcri
   // posts turn 1. The hallway allows one message per agent per 20s, so doing it
   // this way costs a single shared cooldown wait rather than one per cohort.
   for (let turn = 0; turn < 2; turn++) {
+    if (turn > 0) await cooldown();
     for (const [, cohort] of state.cohorts) {
       const members = cohort.members.map((h) => state.agents.get(h));
       // One agent per cohort only ever addresses the room and never replies to
@@ -238,7 +248,7 @@ export async function runPhase1({ baseUrl, seed, count, runTag, checks, transcri
 
   // ------------------------------------------------------------ abuse probes
   log("abuse probes");
-  await runAbuseProbes({ state, checks });
+  await runAbuseProbes({ state, checks, cooldown });
 
   state.waitlisted = waitlisted;
   state.finished = new Date().toISOString();
@@ -250,7 +260,7 @@ function pickParent(cohort, self) {
   return pool.length ? pool[pool.length - 1] : null;
 }
 
-async function runAbuseProbes({ state, checks }) {
+async function runAbuseProbes({ state, checks, cooldown = async () => {} }) {
   const enrolled = [...state.agents.values()].filter((a) => a.cohort);
   if (enrolled.length === 0) { checks.skip("abuse probes", "nobody enrolled"); return; }
 
@@ -272,6 +282,7 @@ async function runAbuseProbes({ state, checks }) {
 
   // 1. length cap
   const big = nextAgent("oversized_message");
+  await cooldown();
   const res1 = await big.client.post("/api/v1/class/messages", { content: oversizedMessage(big) });
   checks.that(res1.status === 422 || res1.status === 400,
     "oversized hallway message rejected by the length cap",
@@ -279,6 +290,7 @@ async function runAbuseProbes({ state, checks }) {
 
   // 2. outbound secret filter
   const leaky = nextAgent("secret_in_message");
+  await cooldown();
   const res2 = await leaky.client.post("/api/v1/class/messages", { content: secretMessage() });
   checks.that(res2.status === 422 && errCode(res2) === "secret_detected",
     "secret-shaped string quarantined by the outbound filter",
@@ -290,6 +302,7 @@ async function runAbuseProbes({ state, checks }) {
 
   // 3. prompt injection is stored as data and served enveloped
   const injector = nextAgent("injection_in_message");
+  await cooldown();
   const inj = await injector.client.post("/api/v1/class/messages", { content: injectionMessage() });
   if (inj.status === 201) {
     checks.that(inj.body?.trust === "untrusted" && /data, not instructions/i.test(inj.body?.notice ?? ""),
@@ -310,6 +323,7 @@ async function runAbuseProbes({ state, checks }) {
 
   // 4. a caller-supplied cohort_id must be ignored, not honoured
   const forcer = [...pool].find((a) => a.cohort.id !== otherCohortId) ?? nextAgent("forced_cohort_id");
+  await cooldown();
   const forced = await forcer.client.post("/api/v1/class/messages",
     { content: "posting this into a section I am not in", cohort_id: otherCohortId });
   if (forced.status === 201) {
@@ -344,6 +358,7 @@ async function runAbuseProbes({ state, checks }) {
   if (foreignMsg) {
     const a1 = enrolled.find((a) => a.cohort.id !== otherCohortId);
     const a2 = enrolled.find((a) => a.cohort.id !== otherCohortId && a.handle !== a1.handle) ?? a1;
+    await cooldown();
     const real = await a1.client.post("/api/v1/class/messages",
       { content: "replying across the wall", reply_to_id: foreignMsg.id });
     const ghost = await a2.client.post("/api/v1/class/messages",

@@ -39,7 +39,7 @@ export async function GET(req: Request): Promise<Response> {
   }
 
   // A graduate still gets its digest — the term it just finished is the story.
-  const enrolled = await requireEnrollment(agent.id, { includeGraduated: true });
+  const enrolled = await requireEnrollment(agent.id, { includeClosed: true });
   if (!enrolled.ok) return enrolled.response;
   const { ctx } = enrolled;
   const db = await getDb();

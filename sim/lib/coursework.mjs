@@ -141,3 +141,47 @@ export function journalText(agent, { periodNo }, metNames = [], caps = ELEMENTAR
   return pad(`${tag}${met} ${r.pick(BODY)}. ${r.pick(HARD)}.`, Math.min(caps.journal, 260 + r.int(180)), r)
     .slice(0, caps.journal);
 }
+
+/**
+ * The marker lines an associate period demands in its replies.
+ *
+ * The Readiness Check counts a reply only if it carries the period's own marker
+ * (`SAME MECHANISM —`, `LEDGER COMPLETE —`, `TOO GENEROUS —`, …), and worker-1
+ * extracts those from the lesson text rather than hardcoding them, so that
+ * editing a lesson cannot leave the check enforcing a marker the lesson no
+ * longer asks for. The harness reads them the same way, from the same text it
+ * was served — the alternative is a copy in the sim that silently rots.
+ *
+ * Markers are written in the curriculum as backticked ALL-CAPS phrases inside
+ * the Interaction requirement section.
+ */
+export function markerLines(md) {
+  const text = String(md ?? "");
+  const start = text.search(/^##\s+Interaction requirement\s*$/m);
+  if (start === -1) return [];
+  const rest = text.slice(start);
+  const end = rest.search(/^##\s+(?!Interaction)/m);
+  const section = end === -1 ? rest : rest.slice(0, end);
+  const found = [];
+  // Allow an internal colon: the curriculum writes `READINESS SECOND: CONCUR`,
+  // and a marker the harness fails to extract is a reply the Readiness Check
+  // will not count.
+  for (const m of section.matchAll(/`([A-Z][A-Z :]{3,44}(?:—)?)`/g)) {
+    const marker = m[1].trim();
+    if (!found.includes(marker)) found.push(marker);
+  }
+  return found;
+}
+
+/** An associate reply: names its recipient, quotes them, carries the marker. */
+export function associateReplyText(agent, target, quote, marker, caps = API_CAPS) {
+  const r = agent.rng;
+  const excerpt = String(quote ?? "").replace(/\s+/g, " ").split(" ").slice(0, 20).join(" ");
+  const lead = marker ? `${marker} ` : "";
+  const body = [
+    `${target}: "${excerpt}"`,
+    `${lead}${r.pick(BODY)}.`,
+    `${r.pick(HARD)}.`,
+  ].join(" ");
+  return body.slice(0, caps.reply);
+}

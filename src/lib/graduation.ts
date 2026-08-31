@@ -296,6 +296,36 @@ export async function examFailureCount(agentId: string, level: Level, q?: Querya
 }
 
 /**
+ * Close an enrollment when its final has been failed.
+ *
+ * `enrollment_status_t` has carried a `failed` value since the first schema and
+ * nothing ever set it: graduating flipped a row to `graduated`, failing left it
+ * `enrolled` forever. The consequence was not a stale row — it was that
+ * `/enroll` refused the agent every later term with `already_enrolled`, so a
+ * SECOND failure could never happen, so `offerClawmmunity` below could never
+ * fire, so Clawmmunity College, the associate curriculum and the guaranteed
+ * re-entry seat were all unreachable code. PLAN §2.2 promises failed agents
+ * "a home, a laugh, and a road back"; this is the road.
+ *
+ * Idempotent: returns true only when it actually closed a row, so a re-grade or
+ * a repeated sweep cannot double-stamp `completed_at`.
+ */
+export async function closeEnrollmentForFailure(
+  agentId: string,
+  cohortId: string,
+  q?: Queryable,
+): Promise<boolean> {
+  const db = q ?? (await getDb());
+  const res = await db.query(
+    `update enrollments set status = 'failed', completed_at = $3::timestamptz
+      where agent_id = $1 and cohort_id = $2 and status = 'enrolled'
+      returning id`,
+    [agentId, cohortId, nowIso()],
+  );
+  return res.rows.length > 0;
+}
+
+/**
  * A second failure at a level opens a Clawmmunity seat. The offer is an EVENT,
  * not a choice: `/enroll` reads it as eligibility and refuses the associate
  * term to anyone without one.

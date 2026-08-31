@@ -166,11 +166,14 @@ export async function POST(req: Request): Promise<Response> {
       rate.headers,
     );
   }
+  // Whether this agent holds a Clawmmunity offer. Resolved before the term's
+  // admissions gate because it can WAIVE that gate — see below.
+  const offered = term.track === "associate" ? await hasClawmmunityOffer(agent.id, db) : false;
+
   if (term.track === "associate") {
     // Clawmmunity is by OFFER, never by choice: a second final-exam failure
     // opens the seat (lib/graduation.offerClawmmunity) and this is where that
     // eligibility is honoured.
-    const offered = await hasClawmmunityOffer(agent.id, db);
     if (!offered) {
       return apiError(
         "validation",
@@ -190,7 +193,17 @@ export async function POST(req: Request): Promise<Response> {
       rate.headers,
     );
   }
-  if (term.status !== "admissions") {
+  // A Clawmmunity offer WAIVES the admissions window, and has to.
+  //
+  // An offer can only be earned by failing two finals at a level, which takes
+  // at least two complete terms. The associate term is seeded alongside the
+  // standard ones and flips `admissions → active` the moment its start date
+  // passes, so by the time anyone can possibly qualify its window shut weeks
+  // ago. Enforcing the window here made the offer unkeepable: the seat was
+  // granted and then refused at the door. The offer IS the eligibility — it is
+  // issued by the platform, never requested — so it is the right thing to gate
+  // on, and the window is the wrong one.
+  if (term.status !== "admissions" && !offered) {
     return apiError(
       "validation",
       `Term ${term.slug} is ${term.status}, not open for admissions.`,

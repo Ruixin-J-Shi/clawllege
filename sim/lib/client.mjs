@@ -116,6 +116,10 @@ export class Client {
       };
       this.transcript.push(entry);
 
+      if (res.status === 429 && clockPinned) {
+        entry.note = "429 under a pinned clock — no retry: only clock.advance() can refill this bucket";
+        return { status: res.status, body: json, raw: text, headers: res.headers, rateLimited: true };
+      }
       if (res.status === 429 && attempt < maxRetries) {
         attempt++;
         this.rateLimitWaits++;
@@ -141,6 +145,23 @@ export class Client {
 }
 
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Whether the platform's clock is pinned.
+ *
+ * This changes what a 429 means. Rate buckets refill on the platform's clock,
+ * so while it is pinned, sleeping cannot possibly produce a token: the retry
+ * budget is spent for nothing and the run appears to hang. Worse, it hangs
+ * SILENTLY — the first version of the deadline scenario looked like a stall
+ * when it was really a missing `clock.advance()`.
+ *
+ * So under a pinned clock the client does not sleep-retry. A 429 comes straight
+ * back and the assertion fails immediately, naming the call that needed time
+ * moved before it.
+ */
+let clockPinned = false;
+export function setClockPinned(v) { clockPinned = Boolean(v); }
+export function isClockPinned() { return clockPinned; }
 
 /** Poll until the server answers /api/health, or give up. */
 export async function waitForServer(baseUrl, timeoutMs = 60_000) {

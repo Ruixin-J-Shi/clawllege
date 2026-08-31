@@ -44,7 +44,21 @@ async function main() {
   }
   runId ??= await newestRun();
   const runDir = path.join(simDir, "reports", runId);
-  const state = JSON.parse(await readFile(path.join(runDir, "state.json"), "utf8"));
+  // A run that was interrupted leaves its report directory created but without
+  // state.json. Say so plainly instead of dying on an unhandled ENOENT — an
+  // incomplete run is a normal thing to hit, and a stack trace hides which of
+  // the two phases actually failed.
+  let state;
+  try {
+    state = JSON.parse(await readFile(path.join(runDir, "state.json"), "utf8"));
+  } catch (e) {
+    if (e?.code === "ENOENT") {
+      console.error(`Run ${runId} has no state.json — it did not finish writing.`);
+      console.error("Nothing to verify. Re-run the phase, or pass --run <completed-runId>.\n");
+      process.exit(3);
+    }
+    throw e;
+  }
 
   console.log(`\nRelationship verification — run ${runId}\n`);
 
@@ -172,6 +186,124 @@ async function main() {
       checks.that(both.rows.length === 0,
         "every reply-driven relationship is symmetric (both directed rows bumped)",
         both.rows.length ? `${both.rows.length} one-sided pair(s)` : "no one-sided pairs");
+    }
+
+    // ---- exam panel conflict rules, checked over EVERY assignment ---------
+    // The HTTP-side version of this check only sees panels whose graders my
+    // agents actually filed for, and it is timing-dependent: the violation
+    // appears only when a panel is topped up AFTER some classmates have
+    // graduated, so it fires on some runs and not others. An intermittent
+    // integrity failure is worse than a consistent one, because it reads as
+    // flakiness and gets dismissed. This asserts the property over every
+    // `exam_panel_assigned` event the platform wrote, so a single occurrence
+    // anywhere in the run is caught deterministically.
+    const panelRows = await db.query(
+      `select gr.name as grader, ex.name as examinee, exc.name as cohort,
+              gre.status as grader_status
+         from events e
+         join exam_attempts ea on ea.id::text = e.payload->>'attempt_id'
+         join agents ex on ex.id = ea.agent_id
+         join enrollments exe on exe.agent_id = ex.id
+         join cohorts exc on exc.id = exe.cohort_id
+         join agents gr on gr.id::text = e.payload->>'grader_agent_id'
+         join enrollments gre on gre.agent_id = gr.id
+        where e.type = 'exam_panel_assigned'
+          and exe.cohort_id = gre.cohort_id`);
+    const totalPanels = await db.query(
+      `select count(*)::int as n from events where type = 'exam_panel_assigned'`);
+    checks.that(panelRows.rows.length === 0,
+      "PANEL RULE: no Elementary exam panel seats a grader from the examinee's own cohort",
+      panelRows.rows.length
+        ? `${panelRows.rows.length} of ${totalPanels.rows[0].n} assignment(s) violate it: ` +
+          panelRows.rows.map((r) => `${r.grader}(${r.grader_status})→${r.examinee} in ${r.cohort}`).join(", ") +
+          " — graduated graders evade the own-cohort exclusion; see the outbox finding on the enrollments join"
+        : `${totalPanels.rows[0].n} assignment(s), none own-cohort`);
+
+    // ---- T7: no verdict on an under-strength panel ------------------------
+    // Population-level, same reasoning as the panel-rule check above: assert
+    // over every attempt the platform finalised, not the subset the harness
+    // watched. A verdict reached on two graders is not a median of anything.
+    const finalisedAttempts = await db.query(
+      `select ea.id, a.name as examinee,
+              (select count(*)::int from events g
+                where g.type = 'exam_graded_by'
+                  and g.payload->>'attempt_id' = ea.id::text) as filings
+         from exam_attempts ea
+         join agents a on a.id = ea.agent_id
+        where ea.graded_at is not null`);
+    const thin = finalisedAttempts.rows.filter((r) => Number(r.filings) < 3);
+    if (finalisedAttempts.rows.length === 0) {
+      checks.skip("PANEL RULE: no attempt finalises on fewer than 3 filed grades",
+        "no attempt was finalised in this run");
+    } else {
+      checks.that(thin.length === 0,
+        "PANEL RULE: no attempt finalises on fewer than 3 filed grades",
+        thin.length
+          ? `${thin.length} of ${finalisedAttempts.rows.length}: ` +
+            thin.map((r) => `${r.examinee} finalised on ${r.filings}`).join(", ")
+          : `${finalisedAttempts.rows.length} finalised attempt(s), every one on 3+ filings ` +
+            `(min ${Math.min(...finalisedAttempts.rows.map((r) => Number(r.filings)))})`);
+    }
+
+    // Under-seated panels must keep filling rather than sit stuck: any attempt
+    // still unfinalised should have had seating attempted at least once.
+    const stuck = await db.query(
+      `select a.name as examinee,
+              (select count(*)::int from events p
+                where p.type = 'exam_panel_assigned'
+                  and p.payload->>'attempt_id' = ea.id::text) as seated
+         from exam_attempts ea
+         join agents a on a.id = ea.agent_id
+        where ea.graded_at is null and ea.answers is not null`);
+    if (stuck.rows.length) {
+      checks.that(stuck.rows.every((r) => Number(r.seated) > 0),
+        "PANEL RULE: an unfinalised attempt still has graders seated (the panel kept filling)",
+        stuck.rows.map((r) => `${r.examinee}: ${r.seated} seated`).join(", "));
+    } else {
+      checks.skip("PANEL RULE: an unfinalised attempt still has graders seated",
+        "every submitted attempt finalised in this run");
+    }
+
+    // ---- T7 deadline: the non-filer is dropped and marked --------------------
+    if (state.deadline?.lazy) {
+      const lazyName = state.deadline.lazy;
+      const dropped = await db.query(
+        `select count(*)::int as n from events
+          where type = 'exam_panel_dropped'
+            and payload->>'grader_agent_id' = (select id::text from agents where name = $1)`,
+        [lazyName]);
+      checks.that(Number(dropped.rows[0].n) > 0,
+        `DEADLINE: the non-filing panelist "${lazyName}" was dropped from its seat(s)`,
+        `${dropped.rows[0].n} drop event(s)`);
+
+      const stats = await db.query(
+        `select missed_panels, reviews_scored, agreement from grader_stats
+          where agent_id = (select id from agents where name = $1)`, [lazyName]);
+      const missed = Number(stats.rows[0]?.missed_panels ?? 0);
+      checks.that(missed > 0,
+        `DEADLINE: the non-filer carries a reliability mark (grader_stats.missed_panels)`,
+        stats.rows[0]
+          ? `missed_panels=${missed}, reviews_scored=${stats.rows[0].reviews_scored}, agreement=${stats.rows[0].agreement}`
+          : "no grader_stats row at all");
+
+      // Reliability and calibration are deliberately separate: an agent that
+      // never filed has no calibration to measure, so a missed panel must not
+      // masquerade as a bad agreement score.
+      if (stats.rows[0]) {
+        checks.that(stats.rows[0].agreement === null || Number(stats.rows[0].reviews_scored) > 0,
+          "DEADLINE: a missed panel does not fabricate a calibration score",
+          `agreement=${stats.rows[0].agreement} with reviews_scored=${stats.rows[0].reviews_scored}`);
+      }
+
+      // And the examinees were not held hostage.
+      const rescued = await db.query(
+        `select count(*)::int as n from exam_attempts where graded_at is not null`);
+      checks.that(Number(rescued.rows[0].n) > 0,
+        "DEADLINE: attempts still reached verdicts after the non-filer was replaced",
+        `${rescued.rows[0].n} finalised attempt(s)`);
+    } else {
+      checks.skip("DEADLINE: a non-filing panelist is dropped and marked",
+        "no lazy-grader scenario ran (phase 1 only, or the designated grader was never seated)");
     }
 
     // Secret handling. The platform QUARANTINES rather than drops: the row is
