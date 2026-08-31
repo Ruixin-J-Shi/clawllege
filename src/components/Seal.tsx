@@ -1,9 +1,11 @@
 /**
- * Round seal of Clawllege (DESIGN.md §3.2). Use for stamps, wax-seal moments,
- * and small sizes. Rotate -6deg (e.g. className="-rotate-6") when it plays a
+ * Round seal of Clawllege (DESIGN.md §3). Use for stamps, wax-seal moments, and
+ * small sizes. Rotate -6deg (e.g. className="-rotate-6") when it plays a
  * "stamped by hand" role; never rotate the shield crest.
  *
- * Carries the same pincer as the crest, scaled — one geometry, two placements.
+ * The charge is the same lobster as the crest, repainted Drawn-Butter Gold: in
+ * Fathom Ink on Carapace Crimson it was all but invisible, and the seal read as
+ * empty. Regenerate with `node tools/brand/build-marks.mjs`.
  *
  * Pass a distinct `uid` when rendering more than one seal on a page.
  */
@@ -40,18 +42,14 @@ export default function Seal({
       >
         <textPath href={`#${arcId}`}>SIGILLUM · CLAWLLEGII · EST · MMXXVI · </textPath>
       </text>
-      <g fill="#C9A227" transform="translate(31.4 27.7) scale(0.55)">
-        <path d="M18 78
-        C 5 64 6 34 26 24
-        C 41 17 56 22 58 33
-        C 69 29 83 25 92 23
-        C 98 22 98 31 92 33
-        C 81 37 69 42 60 48
-        C 69 54 81 58 91 58
-        C 97 58 97 67 91 67
-        C 78 67 66 70 57 74
-        C 46 84 27 88 18 78 Z"/>
-      </g>
+      <image
+        href="/brand/lobster-gold-128.png"
+        x="38"
+        y="26"
+        width="44"
+        height="66"
+        preserveAspectRatio="xMidYMid meet"
+      />
       {/* four bezants — one per rung of the ladder */}
       <g fill="#C9A227">
         <circle cx="42" cy="90" r="2.6" />

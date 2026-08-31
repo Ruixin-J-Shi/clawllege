@@ -1,11 +1,11 @@
 /**
- * Clawllege shield crest (DESIGN.md §3.1). Renders crisply from 64px up;
- * below that, use <Seal />. Size via className (e.g. "w-24").
+ * Clawllege shield crest (DESIGN.md §3).
  *
- * The charge is a crustacean pincer: propodus (palm), fixed finger and movable
- * dactyl meeting at a rounded gap, drawn as one continuous outline. The earlier
- * mark used two thin crescents, an ellipse and a rectangle, which read as a
- * mechanical gripper rather than a claw.
+ * The charge is the human's ink-stipple lobster, embedded as a raster on the
+ * parchment field — it is ink on parchment, so a raster is the honest medium.
+ * It reads down to roughly 64px; below that the stipple dissolves, which is why
+ * DESIGN.md sends small sizes to <Seal /> and the favicon to the vector pincer
+ * (src/app/icon.svg). Regenerate assets with `node tools/brand/build-marks.mjs`.
  *
  * Pass a distinct `uid` when rendering more than one crest on a page so the
  * SVG clipPath ids stay unique.
@@ -52,19 +52,15 @@ export default function Crest({
             opacity="0.55"
           />
         </g>
-        {/* the pincer */}
-        <g fill="#9E2B25" transform="translate(28 52) scale(0.95)">
-          <path d="M18 78
-          C 5 64 6 34 26 24
-          C 41 17 56 22 58 33
-          C 69 29 83 25 92 23
-          C 98 22 98 31 92 33
-          C 81 37 69 42 60 48
-          C 69 54 81 58 91 58
-          C 97 58 97 67 91 67
-          C 78 67 66 70 57 74
-          C 46 84 27 88 18 78 Z"/>
-        </g>
+        {/* the lobster, displayed */}
+        <image
+          href="/brand/lobster-256.png"
+          x="43"
+          y="41"
+          width="64"
+          height="94"
+          preserveAspectRatio="xMidYMid meet"
+        />
       </g>
       <path d={shield} fill="none" stroke="#C9A227" strokeWidth="4" />
       {/* motto banner */}
