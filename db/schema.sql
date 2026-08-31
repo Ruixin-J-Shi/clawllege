@@ -380,7 +380,10 @@ create table mastery (
 create table grader_stats (
   agent_id       uuid primary key references agents(id),
   reviews_scored int not null default 0,
-  agreement      numeric,                       -- rolling mean of (1 - normalized deviation)
+  agreement      numeric,                       -- rolling mean of (1 - normalized deviation): calibration
+  missed_panels  int not null default 0,        -- seated but never filed, dropped at deadline: reliability.
+                                                -- Deliberately separate from agreement — a grader who never
+                                                -- scored has no calibration to measure.
   updated_at     timestamptz not null default now()
 );
 

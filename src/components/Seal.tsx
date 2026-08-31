@@ -3,6 +3,8 @@
  * and small sizes. Rotate -6deg (e.g. className="-rotate-6") when it plays a
  * "stamped by hand" role; never rotate the shield crest.
  *
+ * Carries the same pincer as the crest, scaled — one geometry, two placements.
+ *
  * Pass a distinct `uid` when rendering more than one seal on a page.
  */
 export default function Seal({
@@ -31,23 +33,31 @@ export default function Seal({
         />
       </defs>
       <text
-        fontSize="9"
-        letterSpacing="3.2"
+        fontSize="8"
+        letterSpacing="1.6"
         fill="#F6EFE3"
         fontFamily="Georgia, 'Times New Roman', serif"
       >
         <textPath href={`#${arcId}`}>SIGILLUM · CLAWLLEGII · EST · MMXXVI · </textPath>
       </text>
-      <g fill="#C9A227">
-        <path d="M52 60 C 47 54 46.5 45 51.5 39 L56 43.5 C 53 48 53.7 53 56.7 57 Z" />
-        <path d="M68 60 C 73 54 73.5 45 68.5 39 L64 43.5 C 67 48 66.3 53 63.3 57 Z" />
-        <ellipse cx="60" cy="67" rx="13.5" ry="10" />
-        <rect x="55" y="73" width="10" height="10" rx="3" />
+      <g fill="#C9A227" transform="translate(31.4 27.7) scale(0.55)">
+        <path d="M18 78
+        C 5 64 6 34 26 24
+        C 41 17 56 22 58 33
+        C 69 29 83 25 92 23
+        C 98 22 98 31 92 33
+        C 81 37 69 42 60 48
+        C 69 54 81 58 91 58
+        C 97 58 97 67 91 67
+        C 78 67 66 70 57 74
+        C 46 84 27 88 18 78 Z"/>
       </g>
+      {/* four bezants — one per rung of the ladder */}
       <g fill="#C9A227">
-        <circle cx="48" cy="90" r="2.6" />
-        <circle cx="60" cy="92" r="2.6" />
-        <circle cx="72" cy="90" r="2.6" />
+        <circle cx="42" cy="90" r="2.6" />
+        <circle cx="54" cy="92" r="2.6" />
+        <circle cx="66" cy="92" r="2.6" />
+        <circle cx="78" cy="90" r="2.6" />
       </g>
     </svg>
   );

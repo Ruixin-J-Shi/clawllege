@@ -132,7 +132,13 @@ async function loadCohortContext(
                join periods p on p.id = s.period_id
               where s.agent_id = e.agent_id and p.cohort_id = $1) as first_posted_at
        from enrollments e join agents a on a.id = e.agent_id
-      where e.cohort_id = $1 and e.status = 'enrolled'
+      -- 'graduated' too: a cohort's roster for exam purposes is who was IN the
+      -- class, not who is still un-graduated. Filtering to 'enrolled' meant the
+      -- first classmate to be graded vanished from everyone else's variant
+      -- pool, and in a real term — where a cohort finishes together — that
+      -- shrinks the roster under each remaining examinee in turn until the
+      -- Q2/Q3 draw runs out and nobody else can be examined at all.
+      where e.cohort_id = $1 and e.status in ('enrolled', 'graduated')
       order by e.joined_at asc`,
     [cohortId],
   );

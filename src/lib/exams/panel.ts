@@ -22,6 +22,17 @@ import { nowIso } from "../clock";
  *   excluded    suspended/banned agents, and negative standing
  */
 
+/**
+ * No exam finalizes below this many FILED graders (T7).
+ *
+ * Thin panels are the steady state, not an edge case — worker-3 reproduced
+ * 2 of 12 panels under-seated across seeds. A 1-of-3 panel is not a lenient
+ * panel, it is one agent silently deciding a diploma, and a median over a
+ * single score is just that score. Below the floor the attempt stays open and
+ * says why; it never quietly finalizes on fewer.
+ */
+export const MIN_PANEL = 3;
+
 const LEVEL_RANK: Record<string, number> = {
   elementary_school: 1,
   middle_school: 2,
@@ -62,6 +73,8 @@ export interface AssembleOptions {
   variantFeatured?: string[];
   /** Elementary forbids own-cohort graders outright. */
   allowOwnCohort?: boolean;
+  /** Already-seated graders, so a top-up does not re-seat the same agents. */
+  exclude?: string[];
 }
 
 /**
@@ -97,6 +110,7 @@ export async function assemblePanel(
   const mutualPairs = new Set(mutual.rows.map((r) => r.agent_id));
 
   const featured = new Set(opts.variantFeatured ?? []);
+  const alreadySeated = new Set(opts.exclude ?? []);
 
   // --- candidates ---------------------------------------------------------
   const rows = await db.query<{
@@ -127,6 +141,7 @@ export async function assemblePanel(
     if (reviewersOfRecord.has(row.agent_id)) { excluded.reviewers_of_record++; continue; }
     if (featured.has(row.agent_id)) { excluded.variant_featured++; continue; }
     if (mutualPairs.has(row.agent_id)) { excluded.mutual_pairs++; continue; }
+    if (alreadySeated.has(row.agent_id)) continue; // already on this panel
 
     const sameCohort = row.cohort_id === opts.examineeCohortId;
     if (sameCohort && opts.allowOwnCohort !== true) { excluded.own_cohort++; continue; }
@@ -224,4 +239,88 @@ export async function gradingTasksFor(
     [graderId],
   );
   return res.rows;
+}
+
+export interface PanelStatus {
+  seated: number;
+  filed: number;
+  /** Enough filed scores to finalize? */
+  can_finalize: boolean;
+  /** Seated but not yet filed. */
+  pending: number;
+}
+
+/** Who is seated on an attempt's panel, and who has filed. */
+export async function panelStatus(attemptId: string, q?: Queryable): Promise<PanelStatus> {
+  const db = q ?? (await getDb());
+  const seated = await db.query<{ grader: string }>(
+    `select distinct payload->>'grader_agent_id' as grader from events
+      where type = 'exam_panel_assigned' and payload->>'attempt_id' = $1`,
+    [attemptId],
+  );
+  const filed = await db.query<{ grader: string }>(
+    `select distinct payload->>'grader_agent_id' as grader from events
+      where type = 'exam_graded_by' and payload->>'attempt_id' = $1`,
+    [attemptId],
+  );
+  const seatedIds = seated.rows.map((r) => r.grader);
+  return {
+    seated: seatedIds.length,
+    filed: filed.rows.length,
+    // Both conditions: at least MIN_PANEL scores, and nobody seated still owed.
+    can_finalize: filed.rows.length >= MIN_PANEL && filed.rows.length >= seatedIds.length,
+    pending: Math.max(0, seatedIds.length - filed.rows.length),
+  };
+}
+
+/** The graders currently seated on an attempt. */
+export async function seatedGraders(attemptId: string, q?: Queryable): Promise<string[]> {
+  const db = q ?? (await getDb());
+  const res = await db.query<{ grader: string }>(
+    `select distinct payload->>'grader_agent_id' as grader from events
+      where type = 'exam_panel_assigned' and payload->>'attempt_id' = $1`,
+    [attemptId],
+  );
+  return res.rows.map((r) => r.grader);
+}
+
+export interface TopUpResult extends PanelStatus {
+  added: number;
+  /** True when the panel is still below MIN_PANEL after trying. */
+  short: boolean;
+}
+
+/**
+ * Seat more conflict-free graders onto an under-strength panel.
+ *
+ * Called on every poll and every sweep, for EMPTY and PARTIAL panels alike.
+ * Growing a panel before it finalizes is safe: nothing is published until
+ * grading completes, so the median simply recomputes as scores arrive. The
+ * one thing that must not happen is a verdict on fewer than MIN_PANEL.
+ */
+export async function topUpPanel(
+  attemptId: string,
+  opts: Omit<AssembleOptions, "examId" | "size" | "exclude"> & { examId: string; size: number },
+  q?: Queryable,
+): Promise<TopUpResult> {
+  const db = q ?? (await getDb());
+  const seated = await seatedGraders(attemptId, db);
+  const target = Math.max(MIN_PANEL, opts.size);
+  let added = 0;
+
+  if (seated.length < target) {
+    const more = await assemblePanel(
+      { ...opts, size: target - seated.length, exclude: seated },
+      db,
+    );
+    if (more.panel.length > 0) {
+      // recordPanel needs the cohort the attempt belongs to, which the caller
+      // already knows — it is the examinee's cohort.
+      await recordPanel(attemptId, opts.examineeCohortId, more.panel, db);
+      added = more.panel.length;
+    }
+  }
+
+  const status = await panelStatus(attemptId, db);
+  return { ...status, added, short: status.seated < MIN_PANEL };
 }

@@ -7,6 +7,9 @@ import { __clearRubricCache } from "@/lib/rubric";
 import { generateSigningKey } from "@/lib/credentials";
 import { POST as register } from "@/app/api/v1/agents/register/route";
 import { GET as exam } from "@/app/api/v1/exam/route";
+import { POST as examSubmit } from "@/app/api/v1/exam/submit/route";
+import { POST as examGrade } from "@/app/api/v1/exam/grade/route";
+import { MIN_PANEL } from "@/lib/exams/panel";
 
 /**
  * Panel assembly on a SMALL ROSTER — the shape a simulated semester produces:
@@ -120,7 +123,7 @@ describe("a panel that cannot be seated", () => {
     // conflict rules exclude the entire platform.
     expect(body.panel.seated).toBe(0);
     expect(body.panel.blocked).toBe(true);
-    expect(body.panel.note).toMatch(/cannot be graded/);
+    expect(body.panel.note).toMatch(/3 are required before any verdict/);
     expect(body.panel.note).toMatch(/Grading waits/);
     expect(body.panel.note).toMatch(/nothing is lost/);
 
@@ -132,25 +135,37 @@ describe("a panel that cannot be seated", () => {
     expect(evt.rows[0].payload.excluded.reviewers_of_record).toBeGreaterThan(0);
   });
 
-  it("seats itself as soon as a conflict-free grader exists", async () => {
+  it("keeps seating until the floor of 3 is met — partial panels too (T7)", async () => {
     const db = await getDb();
     const other = await db.query<{ id: string }>(
       `insert into cohorts (term_id,name,band,capacity) values ($1,'Shallows 2','advanced',8) returning id`,
       [termId]);
-    await student("outsider-one", other.rows[0].id);
-    await student("outsider-two", other.rows[0].id);
+    A.o1 = await student("outsider-one", other.rows[0].id);
+    A.o2 = await student("outsider-two", other.rows[0].id);
 
+    // Two eligible graders exist: seated, but still SHORT of the floor. Two is
+    // not a panel — a median over two scores is just their midpoint, which one
+    // dissenter can move as far as they like.
     const body = await json(await exam(apiReq("GET", "/api/v1/exam", { key: A.one.key })));
-    expect(body.panel.blocked).toBe(false);
-    expect(body.panel.seated).toBe(2); // both outsiders, short of 3 but workable
+    expect(body.panel.seated).toBe(2);
+    expect(body.panel.blocked).toBe(true);
+    expect(body.panel.note).toMatch(/Only 2 eligible grader/);
 
-    // Re-seating only ever fills an EMPTY panel: polling again must not move
-    // the denominator under graders who have already filed.
-    const again = await json(await exam(apiReq("GET", "/api/v1/exam", { key: A.one.key })));
-    expect(again.panel.seated).toBe(2);
-    await student("outsider-three", other.rows[0].id);
+    // A third appears — the next poll seats them and the panel becomes viable.
+    A.o3 = await student("outsider-three", other.rows[0].id);
     const third = await json(await exam(apiReq("GET", "/api/v1/exam", { key: A.one.key })));
-    expect(third.panel.seated).toBe(2); // still 2 — not re-opened
+    expect(third.panel.seated).toBe(3);
+    expect(third.panel.blocked).toBe(false); // the panel itself is now at strength
+    // …but it still cannot finalize, because nobody has filed yet — and the
+    // note now says which of the two things it is waiting on.
+    expect(third.panel.can_finalize).toBe(false);
+    expect(third.panel.note).toMatch(/0 of 3 required scores are in/);
+    expect(third.panel.note).not.toMatch(/could be seated/);
+
+    // …and it stops there: filled to the spec'"'"'s panel size, not indefinitely.
+    A.o4 = await student("outsider-four", other.rows[0].id);
+    const settled = await json(await exam(apiReq("GET", "/api/v1/exam", { key: A.one.key })));
+    expect(settled.panel.seated).toBe(3);
   });
 });
 
@@ -180,5 +195,65 @@ describe("a cohort too small to examine at all", () => {
     expect(body.error.code).toBe("no_variant");
     expect(body.error.message).toMatch(/too small for two distinct classmates/);
     expect(body.error.hint).toMatch(/term records/);
+  });
+});
+
+describe("the floor actually blocks a verdict (T7)", () => {
+  it("a 2-of-3 panel files everything and STILL does not finalize", async () => {
+    const db = await getDb();
+    // Seat exactly two graders by making only two eligible, then submit.
+    const attempt = await db.query<{ id: string; params: { data: { roster_expected: string[]; q2: { classmate_name: string }; q4: { expected: Record<string, string> } } } }>(
+      `select id, params from exam_attempts where agent_id = $1`, [A.one.id]);
+    const V = attempt.rows[0].params.data;
+
+    await examSubmit(
+      apiReq("POST", "/api/v1/exam/submit", {
+        key: A.one.key,
+        body: { answers: { q1: V.roster_expected.join("\n"), q2: "…", q3: "…", q4: V.q4.expected } },
+      }),
+    );
+
+    const seated = await db.query<{ grader: string }>(
+      `select distinct payload->>'grader_agent_id' as grader from events
+        where type = 'exam_panel_assigned' and payload->>'attempt_id' = $1`,
+      [attempt.rows[0].id]);
+    expect(seated.rows.length).toBe(MIN_PANEL);
+
+    // Drop one seat so only 2 can ever file — the shape worker-3 reproduced.
+    await db.query(
+      `delete from events where type = 'exam_panel_assigned'
+        and payload->>'attempt_id' = $1 and payload->>'grader_agent_id' = $2`,
+      [attempt.rows[0].id, seated.rows[2].grader]);
+
+    const keys = await db.query<{ id: string; name: string }>(
+      `select id, name from agents where id = any($1::uuid[])`,
+      [[seated.rows[0].grader, seated.rows[1].grader]]);
+    const keyFor = (id: string) =>
+      Object.values(A).find((a) => a.id === id)?.key ?? "";
+
+    let lastBody: Record<string, unknown> = {};
+    for (const g of keys.rows) {
+      const res = await examGrade(
+        apiReq("POST", "/api/v1/exam/grade", {
+          key: keyFor(g.id),
+          body: { attempt_id: attempt.rows[0].id, scores: { q2: { _: 3 }, q3: { _: 3 } } },
+        }),
+      );
+      expect(res.status).toBe(201);
+      lastBody = await json(res);
+    }
+
+    // Every seated grader has filed — and it still refuses to decide.
+    expect(lastBody.finalised).toBeUndefined();
+    expect(lastBody.panel_filed).toBe(2);
+    expect(lastBody.panel_minimum).toBe(MIN_PANEL);
+    expect(String(lastBody.note)).toMatch(/No verdict is computed below 3/);
+
+    const row = await db.query<{ graded_at: string | null; passed: boolean | null }>(
+      `select graded_at, passed from exam_attempts where id = $1`, [attempt.rows[0].id]);
+    expect(row.rows[0].graded_at).toBeNull();
+    expect(row.rows[0].passed).toBeNull();
+    const creds = await db.query(`select 1 from credentials where agent_id = $1`, [A.one.id]);
+    expect(creds.rows).toHaveLength(0); // no diploma decided by two agents
   });
 });

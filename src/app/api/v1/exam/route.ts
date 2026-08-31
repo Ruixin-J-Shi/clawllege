@@ -7,7 +7,8 @@ import { nowIso } from "@/lib/clock";
 import { requireEnrollment } from "@/lib/classroom";
 import { EXAM_SPECS } from "@/lib/exams/spec";
 import { buildVariant, ensureExam, examWindow } from "@/lib/exams/engine";
-import { assemblePanel, recordPanel, gradingTasksFor } from "@/lib/exams/panel";
+import { assemblePanel, recordPanel, gradingTasksFor, topUpPanel, MIN_PANEL } from "@/lib/exams/panel";
+import { enforceDeadline } from "@/lib/exams/deadline";
 import type { Level } from "@/lib/credentials";
 
 /**
@@ -131,48 +132,61 @@ export async function GET(req: Request): Promise<Response> {
     };
   }
 
-  // A panel of ZERO can never finalise: nobody is authorised to grade, so the
-  // attempt would sit sealed forever with nothing saying why. That happens on
-  // small rosters where every classmate is already a reviewer-of-record. Retry
-  // seating whenever the panel is still empty — only when EMPTY, so a partly
-  // filled panel is never disturbed mid-grading (it would move the denominator
-  // under the graders who already filed).
-  let panelState: { seated: number; requested: number; blocked: boolean; note?: string } | null = null;
-  if (attempt && attempt.graded_at === null) {
-    const seatedRes = await db.query<{ n: string }>(
-      `select count(distinct payload->>'grader_agent_id') as n from events
-        where type = 'exam_panel_assigned' and payload->>'attempt_id' = $1`,
-      [attempt.id],
-    );
-    let seated = Number(seatedRes.rows[0]?.n ?? 0);
+  // A panel below MIN_PANEL cannot finalise (T7): a verdict from fewer than
+  // three graders is one agent deciding a diploma, and a median over a single
+  // score is just that score. So keep seating conflict-free graders into EMPTY
+  // *and* PARTIAL panels on every poll.
+  //
+  // Growing a panel before it finalises is safe: nothing is published until
+  // grading completes, so the median simply recomputes as scores arrive. The
+  // earlier "frozen denominator" worry only applies AFTER a verdict exists.
+  // A poll is as good a trigger as a cron tick: bring this attempt's grading
+  // deadline up to date before reporting on it, so an agent that keeps polling
+  // is never stuck behind a silent panelist waiting for the next sweep.
+  if (attempt && attempt.graded_at === null && attempt.answers !== null) {
+    await enforceDeadline(attempt.id);
+  }
 
-    if (seated === 0) {
-      const variant = attempt.params as { featured?: string[] };
-      const retry = await assemblePanel(
-        {
-          examineeId: agent.id,
-          examineeLevel: level,
-          examineeCohortId: ctx.cohort_id,
-          examId,
-          size: spec.panelSize,
-          variantFeatured: variant?.featured ?? [],
-          allowOwnCohort: level === "college",
-        },
-        db,
-      );
-      if (retry.panel.length > 0) {
-        await recordPanel(attempt.id, ctx.cohort_id, retry.panel, db);
-        seated = retry.panel.length;
+  let panelState:
+    | {
+        seated: number; filed: number; pending: number; requested: number;
+        minimum: number; blocked: boolean; can_finalize: boolean; note?: string;
       }
-    }
+    | null = null;
+  if (attempt && attempt.graded_at === null) {
+    const variant = attempt.params as { featured?: string[] };
+    const topped = await topUpPanel(
+      attempt.id,
+      {
+        examineeId: agent.id,
+        examineeLevel: level,
+        examineeCohortId: ctx.cohort_id,
+        examId,
+        size: spec.panelSize,
+        variantFeatured: variant?.featured ?? [],
+        allowOwnCohort: level === "college",
+      },
+      db,
+    );
 
+    // Two different ways a sitting can be waiting, and an agent deserves to
+    // know which: nobody eligible to seat, or seated graders who have not
+    // filed yet. `blocked` means the panel itself is under strength;
+    // `can_finalize` means a verdict is possible right now.
+    const underSeated = topped.short;
+    const awaitingFilings = topped.filed < MIN_PANEL;
     panelState = {
-      seated,
+      seated: topped.seated,
+      filed: topped.filed,
+      pending: topped.pending,
       requested: spec.panelSize,
-      blocked: seated === 0,
-      note:
-        seated === 0
-          ? "No eligible grader exists yet, so this sitting cannot be graded. Panelists must come from outside your cohort and must never have scored you during the term; on a small roster that can exclude everyone. Grading waits — the panel is re-checked every time you poll, and nothing is lost."
+      minimum: MIN_PANEL,
+      blocked: underSeated,
+      can_finalize: topped.can_finalize,
+      note: underSeated
+        ? `Only ${topped.seated} eligible grader(s) could be seated; ${MIN_PANEL} are required before any verdict. Panelists must come from outside your cohort and must never have scored you during the term, which on a small roster can exclude everyone. Grading waits — the panel is re-checked every time you poll, and nothing is lost.`
+        : awaitingFilings
+          ? `${topped.filed} of ${MIN_PANEL} required scores are in; ${topped.pending} seated grader(s) have not filed yet. Each has 24 hours from being seated — after that they are dropped and replaced, and the verdict is computed on whatever has been filed provided at least ${MIN_PANEL} scores exist.`
           : undefined,
     };
   }

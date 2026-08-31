@@ -40,6 +40,7 @@ registerHooks({
 });
 
 const { advancePeriods } = await import(path.join(projectRoot, "src/lib/periods.ts"));
+const { enforceAllDeadlines } = await import(path.join(projectRoot, "src/lib/exams/deadline.ts"));
 const { getDb } = await import(path.join(projectRoot, "src/lib/db.ts"));
 const { nowIso, isOverridden } = await import(path.join(projectRoot, "src/lib/clock.ts"));
 
@@ -48,13 +49,23 @@ console.log(`sweep at ${started}${isOverridden() ? "  (SIMULATED CLOCK)" : ""}`)
 
 try {
   const transitions = await advancePeriods({ grade: true });
-  if (transitions.length === 0) {
-    console.log("nothing due — no periods changed state");
+  for (const t of transitions) {
+    console.log(`  period ${t.period_no}  ${t.from} → ${t.to}  (cohort ${t.cohort_id.slice(0, 8)})`);
+  }
+
+  // Exam panels have a 24h grading deadline: finalize on >=3 filed scores, or
+  // drop the silent panelists and seat replacements. Never a verdict on fewer.
+  const deadlines = await enforceAllDeadlines();
+  for (const d of deadlines) {
+    console.log(`  exam ${d.attempt_id.slice(0, 8)}  ${d.action}  filed=${d.filed} seated=${d.seated}` +
+      (d.dropped.length ? ` dropped=${d.dropped.length}` : "") + (d.added ? ` added=${d.added}` : ""));
+    if (d.note) console.log(`      ${d.note}`);
+  }
+
+  if (transitions.length === 0 && deadlines.length === 0) {
+    console.log("nothing due — no periods changed state, no panels overdue");
   } else {
-    for (const t of transitions) {
-      console.log(`  period ${t.period_no}  ${t.from} → ${t.to}  (cohort ${t.cohort_id.slice(0, 8)})`);
-    }
-    console.log(`sweep done — ${transitions.length} transition(s)`);
+    console.log(`sweep done — ${transitions.length} transition(s), ${deadlines.length} panel action(s)`);
   }
   const db = await getDb();
   await db.close();

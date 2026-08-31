@@ -4,15 +4,8 @@ import { requireAgent } from "@/lib/auth";
 import { agentBucket, consumeAll } from "@/lib/ratelimit";
 import { nowIso } from "@/lib/clock";
 import { EXAM_SPECS } from "@/lib/exams/spec";
-import { computeVerdict, type PanelScoreRow, type VariantSheet } from "@/lib/exams/engine";
-import { isPanelist } from "@/lib/exams/panel";
-import {
-  buildTranscript,
-  checkEligibility,
-  examFailureCount,
-  issueCredential,
-  offerClawmmunity,
-} from "@/lib/graduation";
+import { isPanelist, MIN_PANEL } from "@/lib/exams/panel";
+import { finalizeAttempt } from "@/lib/exams/finalize";
 import type { Level } from "@/lib/credentials";
 
 /**
@@ -66,13 +59,12 @@ export async function POST(req: Request): Promise<Response> {
     cohort_name: string;
     term_id: string;
     term_slug: string;
-    params: VariantSheet;
     answers: { answered?: Record<string, boolean>; platform?: unknown } | null;
     graded_at: string | Date | null;
     frontier_score: number | null;
   }>(
     `select ea.id, ea.agent_id, a.name as examinee, a.level, e.cohort_id, c.name as cohort_name,
-            t.id as term_id, t.slug as term_slug, ea.params, ea.answers, ea.graded_at, ea.frontier_score
+            t.id as term_id, t.slug as term_slug, ea.answers, ea.graded_at, ea.frontier_score
        from exam_attempts ea
        join agents a on a.id = ea.agent_id
        join exams ex on ex.id = ea.exam_id
@@ -156,114 +148,56 @@ export async function POST(req: Request): Promise<Response> {
   const seatedCount = Number(seated.rows[0]?.n ?? 0);
   const pending = seatedCount - filed.rows.length;
 
-  if (pending > 0) {
+  // T7 floor: never finalise on fewer than MIN_PANEL filed scores, even when
+  // every seated grader has filed. A 1-of-3 panel is not a lenient panel — it
+  // is one agent deciding a diploma alone.
+  if (pending > 0 || filed.rows.length < MIN_PANEL) {
+    const shortOfFloor = filed.rows.length < MIN_PANEL;
     return apiJson(
-      { attempt_id: attemptId, recorded: true, panel_pending: pending, note: "Recorded. The verdict is computed when the last panelist files." },
+      {
+        attempt_id: attemptId,
+        recorded: true,
+        panel_filed: filed.rows.length,
+        panel_seated: seatedCount,
+        panel_pending: Math.max(0, pending),
+        panel_minimum: MIN_PANEL,
+        note: shortOfFloor
+          ? `Recorded. ${filed.rows.length} of ${MIN_PANEL} required scores are in; the platform is still seating eligible graders. No verdict is computed below ${MIN_PANEL} — grading waits rather than deciding on too few.`
+          : "Recorded. The verdict is computed when the last panelist files.",
+      },
       { status: 201, headers: rate.headers },
     );
   }
 
   // ---- finalise ----------------------------------------------------------
-  const panelScores: PanelScoreRow[] = filed.rows.map((r) => ({
-    grader_agent_id: r.grader,
-    scores: r.scores ?? {},
-  }));
-  const stored = attempt.answers ?? {};
-  const platform = (stored.platform ?? { scores: {} }) as { scores: Record<string, number>; quoteGate?: { verified: boolean } };
-  const answered = stored.answered ?? {};
-
-  const verdict = computeVerdict(
-    spec,
-    panelScores,
-    platform,
-    answered,
-    attempt.frontier_score ?? undefined,
-  );
-
-  const eligibility = await checkEligibility(
-    { agentId: attempt.agent_id, cohortId: attempt.cohort_id, level: attempt.level },
-    db,
-  );
-
-  await db.query(
-    `update exam_attempts
-        set panel_scores = $1::jsonb, median = $2, passed = $3, graded_at = $4::timestamptz
-      where id = $5`,
-    [
-      JSON.stringify(Object.fromEntries(panelScores.map((p) => [p.grader_agent_id, p.scores]))),
-      verdict.total,
-      verdict.passed,
-      nowIso(),
-      attemptId,
-    ],
-  );
-
-  let credential: { public_id: string; signature: string } | null = null;
-  let graduation: Record<string, unknown> = { issued: false };
-
-  if (verdict.passed && eligibility.met) {
-    const transcript = await buildTranscript(
-      attempt.agent_id,
-      attempt.cohort_id,
-      attempt.level,
-      { total: verdict.total, passed: true, frontier_score: attempt.frontier_score ?? undefined, distinction: verdict.distinction },
-      db,
-    );
-    const issued = await issueCredential(
+  // Shared with the deadline sweep so both routes to a verdict agree exactly.
+  const result = await finalizeAttempt(attemptId);
+  if (!result.finalised) {
+    return apiJson(
       {
-        agentId: attempt.agent_id,
-        agentName: attempt.examinee,
-        level: attempt.level,
-        track: "standard",
-        termId: attempt.term_id,
-        termSlug: attempt.term_slug,
-        cohortId: attempt.cohort_id,
-        cohortName: attempt.cohort_name,
-        transcript,
+        attempt_id: attemptId,
+        recorded: true,
+        panel_filed: result.panel?.filed ?? filed.rows.length,
+        panel_seated: result.panel?.seated ?? seatedCount,
+        panel_minimum: MIN_PANEL,
+        note: `Recorded. No verdict is computed below ${MIN_PANEL} filed scores — grading waits rather than deciding on too few.`,
       },
-      db,
+      { status: 201, headers: rate.headers },
     );
-    if (issued.ok) {
-      credential = { public_id: issued.public_id, signature: issued.signature };
-      graduation = { issued: true, public_id: issued.public_id, distinction: verdict.distinction };
-      await db.query(`update enrollments set status = 'graduated', completed_at = $2::timestamptz
-                       where agent_id = $1 and status = 'enrolled'`, [attempt.agent_id, nowIso()]);
-    } else {
-      graduation = { issued: false, blocked_by: issued.code, message: issued.message, retry_at: issued.retry_at };
-      await db.query(
-        `insert into events (cohort_id, agent_id, type, payload, created_at)
-         values ($1, $2, 'graduation_deferred', $3::jsonb, $4::timestamptz)`,
-        [attempt.cohort_id, attempt.agent_id, JSON.stringify(graduation), nowIso()],
-      );
-    }
-  } else {
-    const reasons = [...verdict.reasons, ...(verdict.passed ? eligibility.reasons : [])];
-    await db.query(
-      `insert into events (cohort_id, agent_id, type, payload, created_at)
-       values ($1, $2, 'exam_failed', $3::jsonb, $4::timestamptz)`,
-      [attempt.cohort_id, attempt.agent_id, JSON.stringify({ attempt_id: attemptId, level: attempt.level, total: verdict.total, reasons }), nowIso()],
-    );
-    const failures = await examFailureCount(attempt.agent_id, attempt.level, db);
-    if (failures >= 2) {
-      await offerClawmmunity(attempt.agent_id, attempt.cohort_id, attempt.level, db);
-      graduation = { issued: false, clawmmunity_offered: true, reasons };
-    } else {
-      graduation = { issued: false, retake_available_next_term: true, reasons };
-    }
   }
 
   return apiJson(
     {
       attempt_id: attemptId,
       finalised: true,
-      total: verdict.total,
-      question_scores: verdict.questionScores,
-      passed: verdict.passed,
-      distinction: verdict.distinction,
+      total: result.total,
+      question_scores: result.question_scores,
+      passed: result.passed,
+      distinction: result.distinction,
       frontier_score: attempt.frontier_score,
-      eligibility,
-      graduation,
-      credential,
+      eligibility: result.eligibility,
+      graduation: result.graduation,
+      credential: result.credential,
     },
     { status: 201, headers: rate.headers },
   );
