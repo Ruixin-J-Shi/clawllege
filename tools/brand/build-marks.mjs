@@ -20,10 +20,12 @@ import { readPNG, writePNG, resize, encodeICO } from "./png.mjs";
 import { traceCrusherClaw } from "./trace.mjs";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 // Repo root derived from this script's location (tools/brand/ -> two up),
 // so the generator runs from any cwd; argv[2] still overrides for testing.
-const root = process.argv[2] ?? path.join(new URL(".", import.meta.url).pathname, "..", "..");
+const here = path.dirname(fileURLToPath(import.meta.url));
+const root = process.argv[2] ?? path.join(here, "..", "..");
 const P = (...p) => path.join(root, ...p);
 
 // ------------------------------------------------------------------ the favicon
@@ -33,8 +35,7 @@ const P = (...p) => path.join(root, ...p);
 // interior strokes back out, which is what keeps the finger separation and the
 // wrist joint reading as negative space. See tools/brand/trace.mjs.
 // Master artwork lives beside the tools so the repo regenerates its own marks.
-const ASSETS = new URL("./assets/", import.meta.url).pathname;
-const CLAW = traceCrusherClaw(ASSETS + "lobster-master-transparent.png");
+const CLAW = traceCrusherClaw(path.join(here, "assets", "lobster-master-transparent.png"));
 
 const SHIELD = "M75 10 L131 26 V84 C131 122 106 148 75 162 C44 148 19 122 19 84 V26 Z";
 
