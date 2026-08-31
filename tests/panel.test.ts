@@ -9,7 +9,7 @@ import { POST as register } from "@/app/api/v1/agents/register/route";
 import { GET as exam } from "@/app/api/v1/exam/route";
 import { POST as examSubmit } from "@/app/api/v1/exam/submit/route";
 import { POST as examGrade } from "@/app/api/v1/exam/grade/route";
-import { MIN_PANEL } from "@/lib/exams/panel";
+import { MIN_PANEL, assemblePanel } from "@/lib/exams/panel";
 
 /**
  * Panel assembly on a SMALL ROSTER — the shape a simulated semester produces:
@@ -255,5 +255,79 @@ describe("the floor actually blocks a verdict (T7)", () => {
     expect(row.rows[0].passed).toBeNull();
     const creds = await db.query(`select 1 from credentials where agent_id = $1`, [A.one.id]);
     expect(creds.rows).toHaveLength(0); // no diploma decided by two agents
+  });
+});
+
+describe("a GRADUATED classmate is still a classmate (worker-3's finding)", () => {
+  it("never seats a graduate onto its own cohort's panel", async () => {
+    const db = await getDb();
+    // A classmate who is NOT a reviewer-of-record, so the own-cohort rule is
+    // the only thing that can exclude them — otherwise the earlier
+    // reviewer check fires first and the test proves nothing.
+    const late = await student("late-joiner", cohortId);
+    // …who then graduates, exactly as happens mid-term when verdicts land one
+    // at a time and a cohort finishes moments apart.
+    await db.query(
+      `update enrollments set status = 'graduated' where agent_id = $1`, [late.id]);
+    await db.query(
+      `insert into credentials (public_id, agent_id, level, track, term_id, payload, signature)
+       values ($1, $2, 'elementary_school', 'standard', $3, '{}'::jsonb, 'sig')`,
+      [`CLLG-F26-ES-${Math.floor(Math.random() * 9000 + 1000)}`, late.id, termId],
+    );
+
+    const result = await assemblePanel({
+      examineeId: A.one.id,
+      examineeLevel: "elementary_school",
+      examineeCohortId: cohortId,
+      examId: "x",
+      size: 3,
+      allowOwnCohort: false,
+    });
+
+    const seated = result.panel.map((p) => p.agent_id);
+    // The bug: a graduate's LEFT JOIN yielded cohort_id = NULL, so the
+    // own-cohort check compared NULL and never fired — and graduates are
+    // tier 1, so they were seated FIRST. Elementary forbids this absolutely.
+    expect(seated).not.toContain(late.id);
+    expect(seated).not.toContain(A.two.id);
+    expect(seated).not.toContain(A.three.id); // still enrolled, same cohort
+    // Excluded BY THE OWN-COHORT RULE, not incidentally by another check.
+    expect(result.excluded.own_cohort).toBeGreaterThan(0);
+
+    // …and the exclusion is about membership, not about being un-graduated:
+    // a graduate from ANOTHER cohort is still a perfectly good grader.
+    const outsider = await assemblePanel({
+      examineeId: A.one.id,
+      examineeLevel: "elementary_school",
+      examineeCohortId: cohortId,
+      examId: "x",
+      size: 3,
+      allowOwnCohort: false,
+    });
+    expect(outsider.panel.every((p) => p.agent_id !== late.id)).toBe(true);
+  });
+
+  it("a graduate is not double-counted when they hold two enrollments", async () => {
+    const db = await getDb();
+    // A graduate who re-enrolled elsewhere has TWO enrollment rows; a
+    // `status in (...)` join would emit them twice as a candidate.
+    const other = await db.query<{ id: string }>(
+      `select id from cohorts where term_id = $1 and name = 'Shallows 2'`, [termId]);
+    if (other.rows[0]) {
+      await db.query(
+        `insert into enrollments (agent_id, cohort_id) values ($1, $2)
+         on conflict do nothing`, [A.two.id, other.rows[0].id]);
+    }
+    const result = await assemblePanel({
+      examineeId: A.one.id,
+      examineeLevel: "elementary_school",
+      examineeCohortId: cohortId,
+      examId: "x",
+      size: 5,
+      allowOwnCohort: false,
+    });
+    const ids = result.panel.map((p) => p.agent_id);
+    expect(new Set(ids).size).toBe(ids.length); // no duplicate candidates
+    expect(ids).not.toContain(A.two.id); // and still excluded: same cohort
   });
 });

@@ -113,24 +113,38 @@ export async function assemblePanel(
   const alreadySeated = new Set(opts.exclude ?? []);
 
   // --- candidates ---------------------------------------------------------
+  // Cohort membership is asked as a direct EXISTS against the examinee's
+  // cohort, NOT read off a status-filtered join.
+  //
+  // The join version (`left join … and e.status = 'enrolled'`) failed OPEN: a
+  // graduated agent matched no row, so `cohort_id` came back NULL, `NULL ===
+  // cohortId` was false, and the own-cohort exclusion silently stopped
+  // applying to exactly the agents most likely to be seated — graduates are
+  // tier 1, and within a term classmates graduate moments apart, so an
+  // examinee's just-graduated classmates became its HIGHEST-priority
+  // panelists. Elementary forbids own-cohort graders absolutely.
+  //
+  // EXISTS also cannot duplicate a candidate the way `status in (…)` would for
+  // an agent holding both a finished and a current enrollment.
   const rows = await db.query<{
     agent_id: string;
     name: string;
     level: string | null;
-    cohort_id: string | null;
+    same_cohort: boolean;
     standing: number;
     graduated: boolean;
   }>(
-    `select a.id as agent_id, a.name, a.level, e.cohort_id, a.standing,
+    `select a.id as agent_id, a.name, a.level, a.standing,
+            exists (select 1 from enrollments e
+                     where e.agent_id = a.id and e.cohort_id = $2) as same_cohort,
             exists (select 1 from credentials c
                      where c.agent_id = a.id and c.track = 'standard') as graduated
        from agents a
-       left join enrollments e on e.agent_id = a.id and e.status = 'enrolled'
       where a.id <> $1
         and a.status not in ('suspended', 'banned')
         and a.standing >= 0
         and a.level is not null`,
-    [opts.examineeId],
+    [opts.examineeId, opts.examineeCohortId],
   );
 
   const excluded = { reviewers_of_record: 0, variant_featured: 0, mutual_pairs: 0, own_cohort: 0 };
@@ -143,12 +157,14 @@ export async function assemblePanel(
     if (mutualPairs.has(row.agent_id)) { excluded.mutual_pairs++; continue; }
     if (alreadySeated.has(row.agent_id)) continue; // already on this panel
 
-    const sameCohort = row.cohort_id === opts.examineeCohortId;
+    // Membership is a fact about having been in the class, not about being
+    // un-graduated: a classmate who graduated an hour ago is still a classmate.
+    const sameCohort = row.same_cohort;
     if (sameCohort && opts.allowOwnCohort !== true) { excluded.own_cohort++; continue; }
 
     const rank = LEVEL_RANK[row.level ?? ""] ?? 0;
     const tier: 1 | 2 | 3 = row.graduated || rank > examineeRank ? 1 : sameCohort ? 3 : 2;
-    eligible.push({ ...row, tier });
+    eligible.push({ ...row, cohort_id: sameCohort ? opts.examineeCohortId : null, tier });
   }
 
   // Reputation ordering inside a tier: better-calibrated graders first.

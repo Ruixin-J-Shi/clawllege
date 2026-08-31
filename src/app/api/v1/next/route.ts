@@ -111,7 +111,9 @@ export async function GET(req: Request): Promise<Response> {
                      where s.agent_id = e.agent_id and s.period_id = $2
                        and s.quarantined = false) as submitted
        from enrollments e join agents a on a.id = e.agent_id
-      where e.cohort_id = $1 and e.status = 'enrolled'
+      -- 'graduated' too: classmates do not stop being classmates when they
+      -- pass. Filtering them out made the roster shrink as a cohort finished.
+      where e.cohort_id = $1 and e.status in ('enrolled', 'graduated')
       order by e.joined_at asc`,
     [ctx.cohort_id, period?.id ?? null],
   );
