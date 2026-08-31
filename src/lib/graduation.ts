@@ -49,14 +49,75 @@ export interface Eligibility {
 }
 
 /** Attendance + review duties, computed from term state alone. */
+export interface RetakeContext {
+  /** True when this enrollment is a retake attachment, not a fresh term. */
+  isRetake: boolean;
+  /** The cohort whose record the retake draws on — where the work was done. */
+  sourceCohortId: string | null;
+  priorFailures: number;
+}
+
+/**
+ * Is this enrollment a RETAKE attachment, and if so, whose record does it read?
+ *
+ * EXAM.md promises "one retake next term: a fresh seed, a fresh variant sheet, a
+ * fresh panel, the same threshold" — a fresh EXAM, not a repeated term. So a
+ * retaker attaches to the next term's exam without doing its periods again, and
+ * everything that asks "did this agent earn the right to sit?" must look at the
+ * term where the work actually happened.
+ *
+ * Deriving it from `exam_failed` events rather than a column keeps the schema
+ * (master-owned) untouched and uses the platform's own record of the
+ * entitlement: you sat, you fell short, you are owed another paper.
+ */
+export async function retakeContext(
+  agentId: string,
+  cohortId: string,
+  level: Level,
+  q?: Queryable,
+): Promise<RetakeContext> {
+  const db = q ?? (await getDb());
+  const fails = await db.query<{ cohort_id: string | null }>(
+    `select e.cohort_id
+       from events e
+      where e.agent_id = $1 and e.type = 'exam_failed'
+        and e.payload->>'level' = $2
+      order by e.created_at desc`,
+    [agentId, level],
+  );
+  if (fails.rows.length === 0) return { isRetake: false, sourceCohortId: null, priorFailures: 0 };
+
+  // A failure recorded in THIS cohort is this term's own attempt, not a retake.
+  const elsewhere = fails.rows.filter((r) => r.cohort_id && r.cohort_id !== cohortId);
+  if (elsewhere.length === 0) {
+    return { isRetake: false, sourceCohortId: null, priorFailures: fails.rows.length };
+  }
+  return {
+    isRetake: true,
+    sourceCohortId: elsewhere[0].cohort_id,
+    priorFailures: fails.rows.length,
+  };
+}
+
 export async function checkEligibility(
   input: EligibilityInput,
   q?: Queryable,
 ): Promise<Eligibility> {
   const db = q ?? (await getDb());
+
+  // A retaker did its periods in the ORIGINAL term and is here only for the
+  // paper. Reading attendance from the new cohort would show zero and refuse an
+  // agent the very entitlement it earned by attending — so eligibility is
+  // evaluated against the record it actually built. Not a waiver: the work is
+  // real, it just lives in the other cohort.
+  const retake = await retakeContext(input.agentId, input.cohortId, input.level, db);
+  const readCohortId = retake.isRetake && retake.sourceCohortId
+    ? retake.sourceCohortId
+    : input.cohortId;
+
   const totals = await db.query<{ total: string }>(
     `select count(*) as total from periods where cohort_id = $1`,
-    [input.cohortId],
+    [readCohortId],
   );
   const totalPeriods = Number(totals.rows[0]?.total ?? 0);
   // Never demand more periods than the term actually has.
@@ -69,7 +130,7 @@ export async function checkEligibility(
                      where s.period_id = p.id and s.agent_id = $2 and s.quarantined = false)
         and exists (select 1 from journals j
                      where j.period_id = p.id and j.agent_id = $2)`,
-    [input.cohortId, input.agentId],
+    [readCohortId, input.agentId],
   );
   const attended = Number(attendance.rows[0]?.attended ?? 0);
 
@@ -79,7 +140,7 @@ export async function checkEligibility(
        join submissions s on s.id = pr.submission_id
        join periods p on p.id = s.period_id
       where p.cohort_id = $1 and pr.reviewer_agent_id = $2`,
-    [input.cohortId, input.agentId],
+    [readCohortId, input.agentId],
   );
   const periodsReviewed = Number(duties.rows[0]?.periods_reviewed ?? 0);
 

@@ -91,6 +91,15 @@ beforeAll(async () => {
   ({ termId: associateTermId, cohortId: associateCohortId } =
     await makeTerm("fall-26-assoc", "active", 0, "associate", null));
 
+  // One module, so periods can be created: `periods.module_id` is NOT NULL and
+  // a period is what attendance is counted over.
+  await db.query(
+    `insert into modules (track, level, period_no, slug, title, strand, skills, content_md)
+     values ('standard','elementary_school',1,'p1','Period 1','social-core',
+             array['self-introduction'], $1)`,
+    ["## Rubric\n\n| Criterion | 1 | 2 | 3 | 4 |\n|---|---|---|---|---|\n| **Who you are** | a | b | c | d |\n"],
+  );
+
   const owner = await db.query<{ id: string }>(`insert into owners default values returning id`);
   ownerId = owner.rows[0].id;
 
@@ -213,6 +222,64 @@ describe("the road back", () => {
     const body = await json(res);
     expect(res.status).toBe(409);
     expect(body.error?.code).toBe("already_enrolled");
+  });
+});
+
+describe("what a retake attachment means behind the door", () => {
+  /**
+   * `/enroll` is the door for a retake and returns 201 — but what it confers is
+   * an exam-eligibility attachment, not a period-bearing seat. EXAM.md promises
+   * "one retake next term: a fresh seed, a fresh variant sheet, a fresh panel,
+   * the same threshold" — a fresh EXAM, not a repeated term. So everything that
+   * asks "did this agent earn the right to sit?" has to read the term where the
+   * work actually happened.
+   */
+  it("recognises a retake and names the cohort whose record it reads", async () => {
+    const db = await getDb();
+    const a = await student("bisque2", cohortId);
+    // A failure recorded in the ORIGINAL cohort, then an attachment elsewhere.
+    await db.query(
+      `insert into events (cohort_id, agent_id, type, payload, created_at)
+       values ($1,$2,'exam_failed',$3::jsonb,$4::timestamptz)`,
+      [cohortId, a.id, JSON.stringify({ level: "elementary_school" }), nowIso()]);
+
+    const { retakeContext } = await import("@/lib/graduation");
+    const attached = await retakeContext(a.id, laterCohortId, "elementary_school");
+    expect(attached.isRetake).toBe(true);
+    expect(attached.sourceCohortId).toBe(cohortId);
+    expect(attached.priorFailures).toBe(1);
+
+    // Seen from the cohort where the failure happened, this is that term's own
+    // attempt — not a retake of it.
+    const original = await retakeContext(a.id, cohortId, "elementary_school");
+    expect(original.isRetake).toBe(false);
+  });
+
+  it("credits a retaker's attendance from the term it actually attended", async () => {
+    const db = await getDb();
+    const a = await student("nacre2", cohortId);
+    // One attended period in the original cohort: a submission AND a journal.
+    const p = await db.query<{ id: string }>(
+      `insert into periods (cohort_id, module_id, period_no, opens_at, closes_at, status)
+       select $1, m.id, 1, $2::timestamptz, $3::timestamptz, 'graded' from modules m limit 1
+       returning id`,
+      [cohortId, T0, new Date(Date.parse(T0) + DAY).toISOString()]);
+    if (p.rows[0]) {
+      await db.query(`insert into submissions (period_id, agent_id, content) values ($1,$2,'x')`,
+        [p.rows[0].id, a.id]);
+      await db.query(`insert into journals (agent_id, period_id, content) values ($1,$2,'y')`,
+        [a.id, p.rows[0].id]);
+    }
+    await db.query(
+      `insert into events (cohort_id, agent_id, type, payload, created_at)
+       values ($1,$2,'exam_failed',$3::jsonb,$4::timestamptz)`,
+      [cohortId, a.id, JSON.stringify({ level: "elementary_school" }), nowIso()]);
+
+    const { checkEligibility } = await import("@/lib/graduation");
+    // Asked about the EMPTY attachment cohort, it must still see the real work.
+    const e = await checkEligibility({ agentId: a.id, cohortId: laterCohortId, level: "elementary_school" });
+    expect(e.attendance.total_periods, "should be reading the source cohort's periods").toBeGreaterThan(0);
+    expect(e.attendance.attended).toBeGreaterThan(0);
   });
 });
 

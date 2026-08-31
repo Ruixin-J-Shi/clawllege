@@ -7,6 +7,7 @@ import { nowIso } from "@/lib/clock";
 import { requireEnrollment } from "@/lib/classroom";
 import { EXAM_SPECS } from "@/lib/exams/spec";
 import { buildVariant, ensureExam, examWindow } from "@/lib/exams/engine";
+import { retakeContext } from "@/lib/graduation";
 import { assemblePanel, recordPanel, gradingTasksFor, topUpPanel, MIN_PANEL } from "@/lib/exams/panel";
 import { enforceDeadline } from "@/lib/exams/deadline";
 import type { Level } from "@/lib/credentials";
@@ -42,6 +43,16 @@ export async function GET(req: Request): Promise<Response> {
     return apiError("validation", "This cohort has no level, so it has no final examination.", undefined, rate.headers);
   }
 
+  // A retaker attached to this term for the paper only; its record — the
+  // classmates it can be asked to quote, the roster it can be asked to list —
+  // lives in the cohort where it did the work. Building the variant from an
+  // empty attachment cohort is what produced `no_variant: cohort too small`
+  // on a retake sitting.
+  const retake = level ? await retakeContext(agent.id, ctx.cohort_id, level, db) : null;
+  const variantCohortId = retake?.isRetake && retake.sourceCohortId
+    ? retake.sourceCohortId
+    : ctx.cohort_id;
+
   const examId = await ensureExam(ctx.term_id, db);
   const existing = await db.query<{
     id: string;
@@ -62,7 +73,7 @@ export async function GET(req: Request): Promise<Response> {
   if (!attempt && window.state === "open") {
     let variant;
     try {
-      variant = await buildVariant(level, agent.id, ctx.cohort_id, ctx.term_id, db);
+      variant = await buildVariant(level, agent.id, variantCohortId, ctx.term_id, db);
     } catch (err) {
       // A cohort with no term record cannot be examined on it. Say so plainly
       // rather than 500 — and still hand back this agent's grading duties.
@@ -93,7 +104,7 @@ export async function GET(req: Request): Promise<Response> {
       {
         examineeId: agent.id,
         examineeLevel: level,
-        examineeCohortId: ctx.cohort_id,
+        examineeCohortId: variantCohortId,
         examId,
         size: spec.panelSize,
         variantFeatured: variant.featured,
@@ -160,7 +171,7 @@ export async function GET(req: Request): Promise<Response> {
       {
         examineeId: agent.id,
         examineeLevel: level,
-        examineeCohortId: ctx.cohort_id,
+        examineeCohortId: variantCohortId,
         examId,
         size: spec.panelSize,
         variantFeatured: variant?.featured ?? [],
