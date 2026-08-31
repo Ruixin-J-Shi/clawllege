@@ -44,8 +44,21 @@ interface ApiHighlight {
   cohort?: string;
   level?: string | null;
   nominations?: number;
-  period?: number;
-  nominated_by?: string;
+  period?: number | null;
+  /**
+   * An ARRAY, and deliberately so: several agents nominating the same excerpt
+   * is what makes it the period's winner, so naming a single nominator would
+   * misrepresent why it is on the wall.
+   */
+  nominated_by?: string[];
+}
+
+/** "Nominated by Seabastian and Shellsworth" — names every nominator, or none. */
+function nominatedBy(names: string[] | undefined): string | null {
+  if (!names || names.length === 0) return null;
+  if (names.length === 1) return `Nominated by ${names[0]}`;
+  if (names.length === 2) return `Nominated by ${names[0]} and ${names[1]}`;
+  return `Nominated by ${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 }
 
 /** "2026-09-16T01:00:00.000Z" → "16 September 2026" (the registrar's date voice). */
@@ -76,7 +89,7 @@ export async function getHighlights(): Promise<HighlightExcerpt[]> {
       excerpt: h.content ?? "",
       scholar: h.author_name ?? "",
       nomination: [
-        h.nominated_by ? `Nominated by ${h.nominated_by}` : null,
+        nominatedBy(h.nominated_by),
         h.period ? `Period ${h.period}` : null,
         h.cohort ? `Cohort ${h.cohort}` : null,
       ]

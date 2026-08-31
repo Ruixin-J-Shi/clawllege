@@ -489,6 +489,34 @@ describe("digest, campus and owner reads", () => {
     expect(JSON.stringify(cohorts)).not.toContain("bad at endings");
   });
 
+  it("the owner LIBRARY functions are what the dashboard calls, and they scope by owner", async () => {
+    // The dashboard does not go over HTTP for these — this is the real path.
+    const { getOwnerAgents, getOwnerFeed } = await import("@/lib/owner");
+
+    const agents = await getOwnerAgents(ownerId);
+    expect(agents.map((a) => a.name).sort()).toEqual(["pinchy", "shellsworth"]);
+    const p = agents.find((a) => a.name === "pinchy")!;
+    expect(p.credentials).toBe(1);
+    expect(p.enrollment?.cohort).toBe("Shallows 1"); // still visible after graduating
+
+    const feed = await getOwnerFeed(ownerId, A.pinchy.id);
+    expect(feed).not.toBeNull();
+    expect(feed!.agent.name).toBe("pinchy");
+    expect(feed!.feed.length).toBeGreaterThan(0);
+    expect(feed!.privacy_note).toMatch(/class-private/);
+    // Journals are the agent's own writing and belong in its human's view.
+    expect(feed!.feed.some((f) => f.kind === "journal")).toBe(true);
+
+    // A different owner gets null — the same answer as "no such agent", so
+    // this is not an existence oracle for other people's agents.
+    const db = await getDb();
+    const stranger = await db.query<{ id: string }>(`insert into owners default values returning id`);
+    expect(await getOwnerFeed(stranger.rows[0].id, A.pinchy.id)).toBeNull();
+    expect(await getOwnerAgents(stranger.rows[0].id)).toEqual([]);
+    // …and an agent that genuinely does not exist answers identically.
+    expect(await getOwnerFeed(ownerId, "00000000-0000-4000-8000-000000000000")).toBeNull();
+  });
+
   it("owner routes are dev-gated and scoped to the owner", async () => {
     const noHeader = await ownerAgents(apiReq("GET", "/api/owner/agents"));
     expect(noHeader.status).toBe(401);

@@ -64,9 +64,9 @@ export default async function CampusPage() {
         </div>
 
         <div className="space-y-6">
-          {HIGHLIGHTS.map((h) => (
+          {HIGHLIGHTS.map((h, i) => (
             <article
-              key={h.title}
+              key={`${i}-${h.scholar}-${h.nomination}`}
               className="bg-parchment-bright border border-fathom/10 rounded-lg p-7 sm:p-8 shadow-[0_10px_40px_rgba(20,48,62,0.06)]"
             >
               <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
@@ -112,9 +112,14 @@ export default async function CampusPage() {
               <p className="text-sm font-medium text-gold-soft mt-3 cw-label text-[12px] font-semibold">
                 {GRADUATION.levelLine}
               </p>
-              <p className="font-serif italic text-lg leading-relaxed mt-6 text-parchment">
-                Capstone: &ldquo;{GRADUATION.capstone}.&rdquo;
-              </p>
+              {/* The graduations feed carries no capstone title. Omitting the
+                  line is the honest rendering; printing `Capstone: ""` is an
+                  empty artifact, not restraint. */}
+              {GRADUATION.capstone ? (
+                <p className="font-serif italic text-lg leading-relaxed mt-6 text-parchment">
+                  Capstone: &ldquo;{GRADUATION.capstone}.&rdquo;
+                </p>
+              ) : null}
               <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
                 <span className="font-mono text-sm text-parchment/90 tracking-wide">
                   {GRADUATION.credentialId}

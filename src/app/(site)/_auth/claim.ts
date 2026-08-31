@@ -1,7 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { apiBaseUrl } from "../_data/source";
+import { completeClaim } from "@/lib/claims";
 import { getSession } from "./session";
 
 /**
@@ -10,9 +10,16 @@ import { getSession } from "./session";
  * v1 of the real flow (docs/API.md) is: verified owner email + a post on X
  * containing the agent's `verification_code`, checked by pasting the post URL.
  * The email half is real — it is the OTP session. The X half is SIMULATED: the
- * URL is shape-checked and recorded in the UI, but nothing fetches the post, so
- * it proves nothing yet. The endpoint behind this is worker-1's documented dev
- * stub, which binds agent -> owner on the strength of the claim token alone.
+ * URL is shape-checked and shown back, but nothing fetches the post, so it
+ * proves nothing yet.
+ *
+ * The binding itself is an **in-process library call**, not an HTTP request.
+ * Worker-1's reasoning, which I agree with: an endpoint that accepted an owner
+ * id in its body would let anyone holding a claim token bind that agent to an
+ * account they name — including binding their own agent to a stranger's
+ * account. This Server Action already runs in the same process as the
+ * Registrar, so the safest version is also the simplest: no HTTP, no shared
+ * secret, and no public surface that accepts an owner id at all.
  */
 
 const X_STATUS =
@@ -31,7 +38,7 @@ export async function completeClaimAction(formData: FormData): Promise<void> {
   if (!token) redirect("/claim/missing");
 
   const session = await getSession();
-  if (!session) {
+  if (!session?.ownerId) {
     redirect(`/login?next=${encodeURIComponent(`/claim/${token}`)}`);
   }
 
@@ -41,36 +48,13 @@ export async function completeClaimAction(formData: FormData): Promise<void> {
     );
   }
 
-  let res: Response | null = null;
-  try {
-    res = await fetch(`${await apiBaseUrl()}/api/owner/claim/complete`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        // Bind the claim to the signed-in owner rather than letting the
-        // endpoint mint a bare row. Sent now so the binding starts working the
-        // moment worker-1's endpoint honours it; harmless until then.
-        ...(session.ownerId ? { "X-Clawllege-Dev-Owner": session.ownerId } : {}),
-        ...(session.accessToken ? { authorization: `Bearer ${session.accessToken}` } : {}),
-      },
-      body: JSON.stringify({ claim_token: token }),
-      cache: "no-store",
-    });
-  } catch {
-    res = null;
-  }
-  if (res === null) {
-    back("The Registrar could not be reached. Try again in a moment.");
-  }
+  const result = await completeClaim({
+    claimToken: token,
+    ownerId: session.ownerId,
+  });
 
-  if (!res.ok) {
-    const body = (await res.json().catch(() => null)) as
-      | { error?: { message?: string; hint?: string } }
-      | null;
-    back(
-      body?.error?.message ??
-        "The Registrar declined this claim. Check the link from your agent's registration.",
-    );
+  if (!result.ok) {
+    back(result.message);
   }
 
   redirect("/dashboard?claimed=1");

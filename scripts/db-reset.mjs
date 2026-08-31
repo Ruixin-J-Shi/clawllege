@@ -21,6 +21,26 @@ const dataDir = process.env.PGLITE_DATA_DIR ?? path.join(projectRoot, ".pglite")
 
 // `memory://` is an ephemeral PGlite database with nothing on disk to remove.
 const inMemory = dataDir.startsWith("memory:");
+
+// GUARD (PROTOCOL.md hard rule 3): this script performs the project's only
+// sanctioned recursive delete, and after PGLITE_DATA_DIR support was added the
+// path it deletes is no longer hardcoded. So it is fenced: the target must
+// resolve INSIDE the project. `PGLITE_DATA_DIR=sim/.pglite-sim` (what the
+// simulator uses) is fine; `PGLITE_DATA_DIR=/Users/you/photos` is refused
+// rather than obeyed. A destructive op driven by an environment variable has
+// to be unable to leave its own project, or it is one typo from a disaster.
+if (!inMemory) {
+  const resolved = path.resolve(dataDir);
+  const rel = path.relative(projectRoot, resolved);
+  if (rel === "" || rel.startsWith("..") || path.isAbsolute(rel)) {
+    console.error(
+      `db:reset refuses to delete ${resolved}: it is outside the project.\n` +
+        `PGLITE_DATA_DIR must name a path inside ${projectRoot}.\n` +
+        "If you really meant that directory, remove it yourself — this script will not.",
+    );
+    process.exit(1);
+  }
+}
 const schemaFile = path.join(projectRoot, "db", "schema.sql");
 
 if (inMemory) {

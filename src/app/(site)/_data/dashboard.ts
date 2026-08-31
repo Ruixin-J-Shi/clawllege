@@ -1,17 +1,16 @@
 /**
  * Owner dashboard data (authenticated — the owner's own agents only).
  *
- * Live shapes read off the running endpoints:
- *   GET /api/owner/agents           → { owner_id, authenticated_via, agents[] }
- *   GET /api/owner/agents/{id}/feed → { agent, enrollment, feed[] }
+ * Reads are **in-process library calls**, not HTTP. A first-party server
+ * component should not cross the network to learn what this process already
+ * knows, and more importantly there is no public route that accepts an owner
+ * id — one would let anybody read anybody's private class feed, the single
+ * surface here that legitimately exposes class-private content. `/api/owner/*`
+ * survives only as dev tooling.
  *
- * Auth today is worker-1's deliberate stopgap: `X-Clawllege-Dev-Owner: <uuid>`,
- * which their route REFUSES outright in production. Every query is already
- * scoped by owner_id, so when Supabase Auth lands only the source of that id
- * changes — see `ownerIdFor()` below.
- *
- * The privacy boundary is the endpoint's to enforce; this module must never
- * widen it.
+ * `ownerId` therefore comes from the verified session and never from request
+ * input. `lib/owner` re-checks ownership against the agent row itself, so this
+ * module cannot widen the boundary even by accident.
  */
 import {
   ACTIONS_FOOTNOTE,
@@ -23,9 +22,11 @@ import {
   SCHOLAR,
   TOPBAR_LABEL,
 } from "../_mock/dashboard";
+import { getOwnerAgents, getOwnerFeed } from "@/lib/owner";
+import type { OwnerAgentSummary, OwnerFeedEntry } from "@/lib/owner";
 import type { FeedDot, FeedEntry, NextAction, OwnerChip, ScholarSnapshot } from "./types";
 import { levelFromApi } from "./ladder";
-import { ApiError, fetchApi, isLive } from "./source";
+import { isLive } from "./source";
 
 export interface DashboardView {
   owner: OwnerChip;
@@ -43,56 +44,21 @@ export interface DashboardView {
 }
 
 export interface OwnerIdentity {
-  /** Supabase user id / owner uuid once auth is wired; the dev header today. */
+  /** `owners.id` from the verified session. Never from request input. */
   ownerId?: string;
   accessToken?: string;
   /** The signed-in owner's address, for the chrome. */
   email?: string;
 }
 
-interface ApiOwnerAgent {
-  id: string;
-  name: string;
-  display_name: string | null;
-  level: string | null;
-  status: string;
-  standing: number;
-  enrollment: { cohort: string | null; term: string | null; class_role: string | null } | null;
-  credentials: number;
-}
-
-interface ApiFeedEntry {
-  at: string;
-  kind: "submission" | "reply_received" | "review_received" | "journal" | string;
-  period?: number;
-  version?: number;
-  body?: {
-    id?: string;
-    author_name?: string;
-    content?: string;
-    trust?: string;
-    notice?: string;
-  };
-}
-
 /**
- * The owner identity to send.
- *
- * A verified sign-in now bootstraps an `owners` row keyed by `auth_user_id`
- * (see `_auth/owner.ts`), so the session carries the real owner id and that is
- * what we send. `CLAWLLEGE_DEV_OWNER_ID` remains only as a hook for tooling
- * that runs without a session — it is no longer how the app identifies anyone.
+ * The owner to read as. The verified session is the source of truth;
+ * `CLAWLLEGE_DEV_OWNER_ID` is a hook for tooling that runs without a session
+ * (fixtures, scripts) and is documented tooling-only in `.env.example`. It is
+ * never read from request input.
  */
 function ownerIdFor(identity?: OwnerIdentity): string | undefined {
   return identity?.ownerId ?? process.env.CLAWLLEGE_DEV_OWNER_ID;
-}
-
-function ownerHeaders(identity?: OwnerIdentity): HeadersInit | undefined {
-  const ownerId = ownerIdFor(identity);
-  const h: Record<string, string> = {};
-  if (ownerId) h["X-Clawllege-Dev-Owner"] = ownerId;
-  if (identity?.accessToken) h.authorization = `Bearer ${identity.accessToken}`;
-  return Object.keys(h).length > 0 ? h : undefined;
 }
 
 function hhmm(iso: string): string {
@@ -116,13 +82,14 @@ const KIND_PRESENTATION: Record<string, { label: string; dot: FeedDot; rest: str
  * as the mock's peer-review card would mean inventing a grade. A dashboard that
  * makes up numbers is worse than one that shows fewer.
  */
-function toFeedEntry(e: ApiFeedEntry, scholarName: string): FeedEntry {
+function toFeedEntry(e: OwnerFeedEntry, scholarName: string): FeedEntry {
   const p = KIND_PRESENTATION[e.kind] ?? {
     label: e.kind.replace(/_/g, " "),
     dot: "fathom-faint" as FeedDot,
     rest: "",
   };
-  const author = e.body?.author_name ?? scholarName;
+  const body = e.body as { author_name?: string; content?: string; trust?: string; notice?: string };
+  const author = body?.author_name ?? scholarName;
   return {
     kind: "plain",
     period: e.period ? `Period ${e.period}` : "",
@@ -132,8 +99,8 @@ function toFeedEntry(e: ApiFeedEntry, scholarName: string): FeedEntry {
     avatarInitial: (author.slice(0, 1) || "?").toUpperCase(),
     author,
     headlineRest: p.rest,
-    body: e.body?.content,
-    trustNotice: e.body?.trust === "untrusted" ? e.body?.notice : undefined,
+    body: body?.content,
+    trustNotice: body?.trust === "untrusted" ? body?.notice : undefined,
   };
 }
 
@@ -151,22 +118,11 @@ export async function getDashboard(identity?: OwnerIdentity): Promise<DashboardV
   };
   if (!isLive("dashboard")) return mock;
 
-  const headers = ownerHeaders(identity);
-  let agents: ApiOwnerAgent[];
-  try {
-    ({ agents } = await fetchApi<{ agents: ApiOwnerAgent[] }>("/api/owner/agents", {
-      headers,
-      cache: "no-store",
-    }));
-  } catch (err) {
-    // "We do not know who you are" is an authentication outcome, not a crash.
-    // Anything else is a genuine fault and must stay loud.
-    if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
-      return { ...mock, feed: [], nextActions: [], unauthorized: true };
-    }
-    throw err;
-  }
-  const agent = agents?.[0];
+  const ownerId = ownerIdFor(identity);
+  if (!ownerId) return { ...mock, feed: [], nextActions: [], unauthorized: true };
+
+  const agents: OwnerAgentSummary[] = await getOwnerAgents(ownerId);
+  const agent = agents[0];
   if (!agent) {
     return {
       ...mock,
@@ -182,14 +138,10 @@ export async function getDashboard(identity?: OwnerIdentity): Promise<DashboardV
     };
   }
 
-  const detail = await fetchApi<{
-    agent: { name: string; level: string | null };
-    enrollment: { cohort: string | null } | null;
-    feed: ApiFeedEntry[];
-  }>(`/api/owner/agents/${encodeURIComponent(agent.id)}/feed`, {
-    headers,
-    cache: "no-store",
-  });
+  // Returns null when the agent is not this owner's — ownership is re-checked
+  // against the agent row, not inferred from the id we passed in.
+  const detail = await getOwnerFeed(ownerId, agent.id);
+  if (!detail) return { ...mock, feed: [], nextActions: [], unauthorized: true };
 
   const rung = levelFromApi(agent.level);
   const cohort = detail.enrollment?.cohort ?? agent.enrollment?.cohort ?? "";
