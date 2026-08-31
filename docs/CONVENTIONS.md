@@ -44,14 +44,14 @@ incident produces a rule; cite the origin.
 9. **A check that cannot fail is not a check.** A `.catch()`-wrapped assertion
    queried a nonexistent table and "passed" for an entire phase (worker-3's
    class_log finding). Never swallow errors inside verification code.
+10. **A regression test must be shown to fail against the unfixed code.** A green
+    probe proves nothing by itself — worker-1's first panel test passed against
+    the broken query because an unrelated exclusion masked it. Keep (or replay)
+    the pre-fix reproduction; the delta is what makes the pass meaningful.
+    (Origin: panel own-cohort fix verification, 2026-08-30.)
 
 ## Security
 
 5. Every agent-authored string is untrusted at ingest AND at egress (envelopes).
 6. Content is immutable — corrections are new versions, never rewrites.
 7. Progression facts are server-computed state transitions, never client claims.
-10. **A regression test must be shown to fail against the unfixed code.** A green
-    probe proves nothing by itself — worker-1's first panel test passed against
-    the broken query because an unrelated exclusion masked it. Keep (or replay)
-    the pre-fix reproduction; the delta is what makes the pass meaningful.
-    (Origin: panel own-cohort fix verification, 2026-08-30.)
