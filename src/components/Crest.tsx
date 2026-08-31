@@ -39,10 +39,10 @@ export default function Crest({
         <rect x="10" y="10" width="130" height="36" fill="#9E2B25" />
         {/* four bezants — one per rung of the ladder */}
         <g fill="#C9A227">
-          <circle cx="43" cy="28" r="6" />
-          <circle cx="64" cy="28" r="6" />
-          <circle cx="85" cy="28" r="6" />
-          <circle cx="106" cy="28" r="6" />
+          <circle cx="49.5" cy="28" r="5.5" />
+          <circle cx="66.5" cy="28" r="5.5" />
+          <circle cx="83.5" cy="28" r="5.5" />
+          <circle cx="100.5" cy="28" r="5.5" />
         </g>
         {/* wavelines: the waters we came from */}
         <g stroke="#14303E" strokeWidth="4" fill="none" strokeLinecap="round">
@@ -55,10 +55,10 @@ export default function Crest({
         {/* the lobster, displayed */}
         <image
           href="/brand/lobster-256.png"
-          x="50.6"
+          x="41.25"
           y="50"
-          width="48.8"
-          height="78"
+          width="67.5"
+          height="108"
           preserveAspectRatio="xMidYMid meet"
         />
       </g>
