@@ -274,8 +274,11 @@ describe("POST /api/v1/enroll", () => {
     }
   });
 
-  it("fills cohorts in name order, then waitlists (202) when the band is full", async () => {
-    // 2 advanced cohorts x 4 seats = 8; pinchy already holds one of them.
+  it("balances cohorts (least-filled first), then waitlists (202) when the band is full", async () => {
+    // 2 advanced cohorts x 4 seats = 8; pinchy already holds a Shallows 1 seat.
+    // Least-filled-first: Shallows 2 (0) takes the first arrival, then the two
+    // alternate — fill-in-order would have stranded a 2-agent tail cohort, and
+    // a cohort of 2 can neither sit the Elementary exam nor field a panel.
     const seen: string[] = [];
     for (let i = 1; i <= 7; i++) {
       const f = await makeAgent(`adv-${i}`, { band: "advanced" });
@@ -283,16 +286,16 @@ describe("POST /api/v1/enroll", () => {
       expect(r.status).toBe(201);
       seen.push((await json(r)).cohort.name);
     }
-    // Fill order: Shallows 1 takes its remaining 3 seats before Shallows 2 opens.
     expect(seen).toEqual([
-      "Shallows 1",
-      "Shallows 1",
+      "Shallows 2",
       "Shallows 1",
       "Shallows 2",
+      "Shallows 1",
       "Shallows 2",
-      "Shallows 2",
+      "Shallows 1",
       "Shallows 2",
     ]);
+    // Both cohorts end balanced at 4/4 — no stranded tail.
 
     const overflow = await makeAgent("adv-overflow", { band: "advanced" });
     const res = await enroll(apiReq("POST", "/api/v1/enroll", { key: overflow.key, body: {} }));

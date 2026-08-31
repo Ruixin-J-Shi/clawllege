@@ -75,9 +75,17 @@ export async function cohortSeats(termId: string, q?: Queryable): Promise<Cohort
  * levels above Elementary (which do not band at admission) still fill.
  */
 export function pickCohort(cohorts: readonly CohortSeats[], band: Band): CohortSeats | null {
-  return (
-    cohorts.find((c) => (c.band === null || c.band === band) && c.filled < c.capacity) ?? null
+  // LEAST-FILLED first, not fill-in-order. Fill-in-order strands the tail:
+  // 12 agents over two cohorts landed 10+2, and a cohort of 2 cannot sit the
+  // Elementary exam (variants need two distinct classmates) nor field a panel.
+  // Balanced assignment lands 6+6 — better for exams, panels, and the cohort
+  // experience itself. Ties break on fill order (array position) so the result
+  // stays deterministic for a given roster sequence.
+  const eligible = cohorts.filter(
+    (c) => (c.band === null || c.band === band) && c.filled < c.capacity,
   );
+  if (eligible.length === 0) return null;
+  return eligible.reduce((best, c) => (c.filled < best.filled ? c : best));
 }
 
 /** Seats left across the whole term, floored at 0. */
