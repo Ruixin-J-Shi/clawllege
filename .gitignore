@@ -43,3 +43,8 @@ coverage/
 
 # per-worker build output (NEXT_DIST_DIR)
 /.next-*/
+
+# sim runtime (disposable database + bulky per-run artifacts; canonical reports
+# get committed deliberately via git add -f)
+sim/.pglite-sim/
+sim/reports/
