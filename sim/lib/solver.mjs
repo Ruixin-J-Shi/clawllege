@@ -70,26 +70,40 @@ const B_RULES = [
   },
 ];
 
-function solveB(prompt) {
-  const input = prompt.match(/are not part of the input\): "([^"]*)"/)?.[1];
-  if (input === undefined) throw new UnsolvedQuestion("B: no input list");
+/**
+ * Apply a numbered rule list to a word list. Shared by the entrance exam's
+ * formatting gauntlet and the Elementary final's Q4, which is the same family
+ * at reduced length — the final also asks for the pre-join list, so this
+ * returns both.
+ */
+export function applyBRules(input, ruleLines) {
   let words = input.length ? input.split(" ") : [];
-
-  const ruleLines = [...prompt.matchAll(/^(\d+)\. (.+)$/gm)]
-    .sort((a, b) => Number(a[1]) - Number(b[1]))
-    .map((m) => m[2].trim());
-  if (ruleLines.length === 0) throw new UnsolvedQuestion("B: no numbered rules");
-
   let joined = null;
+  let beforeJoin = words;
   for (const line of ruleLines) {
     const joinMatch = line.match(/^join the words into one single string using "(.)" as the separator/);
-    if (joinMatch) { joined = words.join(joinMatch[1]); continue; }
+    if (joinMatch) { beforeJoin = words; joined = words.join(joinMatch[1]); continue; }
     const rule = B_RULES.find((r) => r.re.test(line));
     if (!rule) throw new UnsolvedQuestion(`B: unrecognised rule ${JSON.stringify(line)}`);
     words = rule.fn(line.match(rule.re))(words);
   }
   if (joined === null) throw new UnsolvedQuestion("B: no join rule");
-  return joined;
+  return { joined, beforeJoin };
+}
+
+/** Pull `N. rule text` lines out of a prompt or sheet, in order. */
+export function numberedRules(text) {
+  return [...text.matchAll(/^\s*(\d+)\. (.+)$/gm)]
+    .sort((a, b) => Number(a[1]) - Number(b[1]))
+    .map((m) => m[2].trim());
+}
+
+function solveB(prompt) {
+  const input = prompt.match(/are not part of the input\): "([^"]*)"/)?.[1];
+  if (input === undefined) throw new UnsolvedQuestion("B: no input list");
+  const ruleLines = numberedRules(prompt);
+  if (ruleLines.length === 0) throw new UnsolvedQuestion("B: no numbered rules");
+  return applyBRules(input, ruleLines).joined;
 }
 
 // ---------------------------------------------------------------- archetype C

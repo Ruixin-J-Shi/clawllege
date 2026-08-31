@@ -109,6 +109,67 @@ export function renderReport({ state, checks, meta, transcript }) {
     }
   }
 
+  // ------------------------------------------------------------- the term
+  if (state.periods?.length) {
+    L.push("## The term");
+    L.push("");
+    L.push(`Clock: **${state.clock?.mode === "route" ? "POST /api/dev/clock" : "server restart"}** (${state.clock?.restarts ?? 0} restarts). Each period is opened by moving the platform's clock to the middle of its window, and closed by moving past it.`);
+    L.push("");
+    L.push("| Period | Cohort | Title | Submissions | Replies | Reviews | Journals | Nominations |");
+    L.push("|---|---|---|---|---|---|---|---|");
+    for (const p of state.periods) {
+      L.push(`| ${p.no} | ${p.cohort ?? "—"} | ${p.title ?? "—"} | ${p.submissions.length} | ${p.replies} | ${p.reviews} | ${p.journals} | ${p.nominations} |`);
+    }
+    const t = state.courseworkTotals;
+    if (t) {
+      L.push("");
+      L.push(`**Term totals:** ${t.submissions} submissions · ${t.replies} replies · ${t.reviews} reviews · ${t.journals} journals · ${t.nominations} nominations.`);
+    }
+    L.push("");
+    const withRubric = state.periods.find((p) => p.criteria?.length);
+    if (withRubric) {
+      L.push(`Peer reviews are scored against criteria the harness parsed out of the lesson it was served — the same markdown a student reads, and the same text \`/reviews\` validates against. Period ${withRubric.no}'s keys: \`${withRubric.criteria.join("`, `")}\`.`);
+      L.push("");
+    }
+  }
+
+  // ------------------------------------------------------------- roles
+  if (state.rolesByPeriod?.length >= 2) {
+    L.push("## Rotating roles");
+    L.push("");
+    const agents = Object.keys(state.rolesByPeriod[0].roles);
+    L.push(`| Agent | ${state.rolesByPeriod.map((r) => `P${r.periodNo}`).join(" | ")} |`);
+    L.push(`|---|${state.rolesByPeriod.map(() => "---").join("|")}|`);
+    for (const a of agents) {
+      L.push(`| \`${a}\` | ${state.rolesByPeriod.map((r) => r.roles[a] ?? "—").join(" | ")} |`);
+    }
+    L.push("");
+  }
+
+  // ------------------------------------------------------------- grading
+  if (state.lastSnapshot) {
+    const s2 = state.lastSnapshot;
+    L.push("## Grading outcomes");
+    L.push("");
+    L.push(`${s2.reviewCount} peer review(s) recorded · ${s2.mastery.length} skill meter(s) above zero · ${s2.graderStats.length} grader(s) with tracked agreement · ${s2.highlights.length} published highlight(s).`);
+    L.push("");
+    if (s2.mastery.length) {
+      L.push("| Skill | Meter |");
+      L.push("|---|---|");
+      for (const m of s2.mastery.slice(0, 12)) L.push(`| ${m.skill} | ${Number(m.level).toFixed(2)} |`);
+      if (s2.mastery.length > 12) L.push(`| _…${s2.mastery.length - 12} more_ | |`);
+      L.push("");
+    }
+    if (s2.highlights.length) {
+      L.push("Published highlight(s) — a sanitized *copy*, decoupled from the private tables:");
+      L.push("");
+      for (const h of s2.highlights.slice(0, 3)) {
+        L.push(`> ${String(h.excerpt ?? "").slice(0, 200).replace(/\n/g, " ")}${h.votes ? `  \n> _(${h.votes} votes)_` : ""}`);
+        L.push("");
+      }
+    }
+  }
+
   // ------------------------------------------------------------- what fired
   L.push("## What the platform caught");
   L.push("");

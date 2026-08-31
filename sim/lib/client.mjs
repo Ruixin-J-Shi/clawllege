@@ -60,7 +60,7 @@ export class Client {
    * (the abuse agent *expects* 404s and 422s), so a throw would hide the finding.
    * Retries only on 429, honouring Retry-After, at most `maxRetries` times.
    */
-  async request(method, path, { body, key, expectStatus, maxRetries = 4, noRetry = false } = {}) {
+  async request(method, path, { body, key, expectStatus, maxRetries = 4, noRetry = false, noAuth = false } = {}) {
     if (noRetry) maxRetries = 0;
     const url = `${this.origin}${path}`;
     const headers = { accept: "application/json" };
@@ -68,7 +68,11 @@ export class Client {
       headers["x-forwarded-for"] = this.identity.ip;
       headers["user-agent"] = this.identity.ua;
     }
-    const authKey = key ?? this.apiKey;
+    // `noAuth` is explicit rather than `key: null`, because `??` would fall
+    // straight back to the stored key and silently authenticate a request the
+    // caller meant to send as a stranger — which is exactly what the public
+    // surface assertions must not do.
+    const authKey = noAuth ? null : (key ?? this.apiKey);
     if (authKey) headers.authorization = `Bearer ${authKey}`;
     if (body !== undefined) headers["content-type"] = "application/json";
 

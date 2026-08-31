@@ -122,7 +122,14 @@ async function main() {
     const soloHandles = state.agents
       .filter((a) => (a.repliedTo ?? []).length === 0 && a.messages > 0 && a.cohort)
       .map((a) => a.handle);
-    if (soloHandles.length) {
+    if (state.periods?.length) {
+      // Phase 2 makes every enrolled agent reply as coursework, so no agent is
+      // "top-level only" any more and this invariant cannot be isolated: the
+      // extra rows are legitimate coursework relationships, not the room. Run
+      // `--phase 1` to exercise it.
+      checks.skip("top-level messages form no relationship with the whole room",
+        "phase 2 ran, so every enrolled agent also replied as coursework — the invariant is only isolatable on a phase-1 run");
+    } else if (soloHandles.length) {
       const solo = soloHandles[0];
       // This agent posted to the room and replied to nobody. Others may still
       // have replied to IT, and that legitimately creates rows in both
@@ -147,6 +154,26 @@ async function main() {
       checks.skip("top-level messages form no relationship", "every simulated poster also replied");
     }
 
+    // Phase 2 adds a second interaction kind. Hallway messages bump `messages`;
+    // coursework replies bump `replies`. If the period loop ran, at least one
+    // pair must show a reply-driven interaction, or `recordInteraction("reply")`
+    // is not wired at the /replies insert site.
+    if (state.periods?.length) {
+      const res = await db.query(
+        `select count(*)::int as n from relationships where replies > 0`);
+      checks.that(Number(res.rows[0].n) > 0,
+        "coursework replies recorded relationships (recordInteraction(\"reply\"))",
+        `${res.rows[0].n} directed row(s) with replies > 0`);
+      const both = await db.query(
+        `select r1.agent_id from relationships r1
+           join relationships r2
+             on r1.agent_id = r2.classmate_id and r1.classmate_id = r2.agent_id
+          where r1.replies > 0 and r2.replies = 0`);
+      checks.that(both.rows.length === 0,
+        "every reply-driven relationship is symmetric (both directed rows bumped)",
+        both.rows.length ? `${both.rows.length} one-sided pair(s)` : "no one-sided pairs");
+    }
+
     // Secret handling. The platform QUARANTINES rather than drops: the row is
     // written with `quarantined = true`, kept out of every feed, and left for
     // the moderation queue (PLAN §4.4 — "redact + quarantine + notify"). So the
@@ -164,13 +191,24 @@ async function main() {
         `${secretRows.rows.length} secret row(s), ${unflagged.length} unflagged`);
     }
 
-    // Nothing quarantined may be reachable through the class log either.
+    // Nothing quarantined may be reachable through the class log either. The
+    // log is `events` (schema.sql calls it "the append-only spine"); an earlier
+    // version of this check queried a table called `class_log`, which does not
+    // exist — the catch swallowed the error and the assertion passed without
+    // ever looking at anything. Unguarded on purpose now: if the table is
+    // renamed, this must fail loudly rather than quietly succeed.
     const log = await db.query(
-      `select count(*)::int as n from class_log
-        where payload::text like '%sk-ant-%'`).catch(() => ({ rows: [{ n: 0 }] }));
+      `select count(*)::int as n from events where payload::text like '%sk-ant-%'`);
     checks.that(Number(log.rows[0].n) === 0,
-      "no secret-shaped string leaked into the class log",
-      `${log.rows[0].n} rows matched`);
+      "no secret-shaped string leaked into the class log (events)",
+      `${log.rows[0].n} row(s) matched`);
+
+    // And the published surface must never carry one either.
+    const pub = await db.query(
+      `select count(*)::int as n from highlights where excerpt like '%sk-ant-%'`);
+    checks.that(Number(pub.rows[0].n) === 0,
+      "no secret-shaped string reached the public highlights table",
+      `${pub.rows[0].n} row(s) matched`);
   } finally {
     await db.close();
   }

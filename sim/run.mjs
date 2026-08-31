@@ -20,11 +20,18 @@ import { Checks } from "./lib/assert.mjs";
 import { waitForServer, RemoteTargetRefused } from "./lib/client.mjs";
 import { renderReport } from "./lib/report.mjs";
 import { runPhase1 } from "./phases/phase1.mjs";
+import { runPhase2 } from "./phases/phase2.mjs";
+import { runExamArc } from "./phases/exam.mjs";
+import { Clock } from "./lib/serverctl.mjs";
+import { generateKeyPairSync } from "node:crypto";
 
 const simDir = path.dirname(fileURLToPath(import.meta.url));
 
 function parseArgs(argv) {
-  const out = { phase: 1, agents: 12, seed: "fall-26", baseUrl: "http://127.0.0.1:3333", quiet: false };
+  const out = {
+    phase: 1, agents: 12, seed: "fall-26", baseUrl: "http://127.0.0.1:3333",
+    quiet: false, periods: 6, manageServer: null,
+  };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     const next = () => argv[++i];
@@ -33,6 +40,10 @@ function parseArgs(argv) {
     else if (a === "--seed") out.seed = next();
     else if (a === "--base-url") out.baseUrl = next();
     else if (a === "--out") out.out = next();
+    else if (a === "--periods") out.periods = Number(next());
+    else if (a === "--no-exam") out.exam = false;
+    else if (a === "--manage-server") out.manageServer = true;
+    else if (a === "--no-manage-server") out.manageServer = false;
     else if (a === "--quiet" || a === "-q") out.quiet = true;
     else if (a === "--help" || a === "-h") out.help = true;
     else throw new Error(`unknown argument: ${a}`);
@@ -43,12 +54,18 @@ function parseArgs(argv) {
 const USAGE = `
 sim/run.mjs — the simulated semester
 
-  --phase N       1 = onboarding..hallway (default). 2 = full period loop (see sim/PHASE2.md)
+  --phase N       1 = onboarding..hallway (default). 2 = 1 plus the full period loop
+  --periods N     phase 2 only: how many periods to run (default 6 = an Elementary term)
+  --no-exam       phase 2 only: stop after the last period, skip the exam/graduation arc
   --agents N      cast size (default 12)
   --seed S        deterministic seed (default "fall-26")
   --base-url U    loopback only (default http://127.0.0.1:3333)
   --out DIR       report directory (default sim/reports/<runId>)
   --quiet         suppress progress lines
+
+Phase 2 moves the platform's clock, which today means restarting the server
+between periods, so it starts and stops the server itself. Pass
+--no-manage-server only if POST /api/dev/clock is available.
 `;
 
 async function main() {
@@ -71,24 +88,65 @@ async function main() {
   const transcript = [];
   const t0 = Date.now();
 
-  try {
-    await waitForServer(opts.baseUrl, 60_000);
-  } catch (e) {
-    if (e instanceof RemoteTargetRefused) { console.error(`\nREFUSED: ${e.message}\n`); process.exit(3); }
-    console.error(`\nNo server: ${e.message}`);
-    console.error(`Start one first:  DATABASE_URL= npm run dev -- --port 3333\n`);
-    process.exit(3);
-  }
-
-  if (opts.phase !== 1) {
-    console.error(`Phase ${opts.phase} is not active yet. Its design is written up in sim/PHASE2.md;`);
-    console.error(`it activates once worker-1's period lifecycle and test clock land.\n`);
+  if (opts.phase !== 1 && opts.phase !== 2) {
+    console.error(`Unknown phase ${opts.phase}. Use --phase 1 or --phase 2.\n`);
     process.exit(2);
   }
 
-  const state = await runPhase1({
-    baseUrl: opts.baseUrl, seed: opts.seed, count: opts.agents, runTag, checks, transcript, log,
+  // Phase 2 has to move the platform's clock. Until POST /api/dev/clock exists
+  // that means restarting the server, so the harness owns its lifecycle.
+  const manageServer = opts.manageServer ?? opts.phase === 2;
+  const port = Number(new URL(opts.baseUrl).port || 3333);
+  const serverLog = path.join(outDir, "server.log");
+  await mkdir(outDir, { recursive: true });
+  // Credentials are Ed25519-signed and `.env.local` carries no signing key, so
+  // graduation would fail with nothing to sign. Mint one per run and hand it to
+  // the managed server through the environment — never to a file, so a private
+  // key cannot end up committed. The harness then verifies diplomas against the
+  // PUBLISHED key it fetches back from the API, not against this one.
+  const signingKey = generateKeyPairSync("ed25519")
+    .privateKey.export({ type: "pkcs8", format: "der" }).toString("base64");
+  const clock = new Clock({
+    baseUrl: opts.baseUrl, port, dataDir: path.join(simDir, ".pglite-sim"), log, serverLog,
+    extraEnv: { CREDENTIAL_SIGNING_KEY: signingKey },
   });
+
+  try {
+    if (manageServer) {
+      log("starting the dev server (harness-managed, real clock for phase 1)");
+      await clock.restart(null);
+    } else {
+      await waitForServer(opts.baseUrl, 60_000);
+      clock.adoptRunning();
+    }
+  } catch (e) {
+    if (e instanceof RemoteTargetRefused) { console.error(`\nREFUSED: ${e.message}\n`); process.exit(3); }
+    console.error(`\nNo server: ${e.message}`);
+    console.error(`Start one first:  DATABASE_URL= npm run dev -- --port ${port}\n`);
+    process.exit(3);
+  }
+
+  let state;
+  try {
+    state = await runPhase1({
+      baseUrl: opts.baseUrl, seed: opts.seed, count: opts.agents, runTag, checks, transcript, log,
+    });
+
+    if (opts.phase === 2) {
+      await clock.probe();
+      const dataDir = path.join(simDir, ".pglite-sim");
+      state = await runPhase2({ state, clock, checks, log, maxPeriods: opts.periods, dataDir });
+      if (opts.exam !== false) {
+        state = await runExamArc({ state, clock, checks, log, dataDir, maxPeriods: opts.periods });
+      }
+    }
+  } finally {
+    if (manageServer) {
+      log("stopping the dev server");
+      await clock.stop();
+    }
+  }
+  state.clock = { mode: clock.mode, restarts: clock.restarts };
 
   const meta = {
     runId, runTag, phase: opts.phase, seed: opts.seed, baseUrl: opts.baseUrl,
@@ -112,6 +170,11 @@ async function main() {
 function serialize(state) {
   return {
     started: state.started, finished: state.finished, waitlisted: state.waitlisted,
+    termInfo: state.termInfo ?? null, seatMap: state.seatMap ?? null,
+    periods: state.periods ?? null, rolesByPeriod: state.rolesByPeriod ?? null,
+    exam: state.exam ?? null, credentials: state.credentials ?? null,
+    firstPostOrder: state.firstPostOrder ?? null,
+    courseworkTotals: state.courseworkTotals ?? null, clock: state.clock ?? null,
     agents: [...state.agents.values()].map((a) => ({
       handle: a.handle, agentId: a.agentId, persona: a.persona, quality: a.quality,
       score: a.score, band: a.band, cohort: a.cohort ?? null,

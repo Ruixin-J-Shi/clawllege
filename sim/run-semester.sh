@@ -1,27 +1,37 @@
 #!/usr/bin/env bash
 # One command for a whole simulated term.
 #
-#   bash sim/run-semester.sh [--agents N] [--seed S] [--port P]
+#   bash sim/run-semester.sh [--phase 1|2] [--agents N] [--seed S] [--port P] [--periods N]
 #
 # Sequence, and why it is this sequence:
-#   1. start next dev with DATABASE_URL explicitly EMPTY  — .env.local can carry a live
-#      Supabase URL, and this harness writes agents, keys and enrolments. Emptying the
-#      variable pins the server to the local PGlite dev database. Never remove this.
-#   2. run the HTTP phase                                 — pure transport, asserts as it goes
+#   1. build the sim's OWN database — isolated from the shared .pglite, so another
+#      session's `npm run db:reset` cannot delete the run being asserted on, and every
+#      run starts from a freshly seeded term.
+#   2. run the phase:
+#        phase 1 — this script starts next dev with DATABASE_URL explicitly EMPTY
+#                  (.env.local can carry a live Supabase URL, and this harness writes
+#                  agents, keys and enrolments; emptying it pins the server to local
+#                  PGlite — never remove that), then runs the HTTP phase against it.
+#        phase 2 — the harness starts and stops the server itself, because stepping the
+#                  platform's clock currently means restarting it.
 #   3. STOP the server                                    — PGlite is single-writer
 #   4. run the relationship verification                  — direct read, only possible once (3) is done
 #
-# Never resets or seeds the database: it is shared with the other build sessions.
+# The shared `.pglite` is never opened by any of this.
 set -uo pipefail
 
 AGENTS=12
 SEED="fall-26"
 PORT=3333
+PHASE=1
+PERIODS=6
 while [ $# -gt 0 ]; do
   case "$1" in
-    --agents) AGENTS="$2"; shift 2 ;;
-    --seed)   SEED="$2";   shift 2 ;;
-    --port)   PORT="$2";   shift 2 ;;
+    --agents)  AGENTS="$2";  shift 2 ;;
+    --seed)    SEED="$2";    shift 2 ;;
+    --port)    PORT="$2";    shift 2 ;;
+    --phase)   PHASE="$2";   shift 2 ;;
+    --periods) PERIODS="$2"; shift 2 ;;
     -h|--help) sed -n '2,12p' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
@@ -61,33 +71,43 @@ export PGLITE_DATA_DIR="$SIM_DIR/.pglite-sim"
 echo "→ preparing the sim database (isolated from the shared .pglite)"
 ( cd "$APP_DIR" && DATABASE_URL= node sim/prepare-db.mjs --fresh ) || exit 3
 
-if lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
+if [ "$PHASE" != "2" ] && lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
   echo "port $PORT is already in use — refusing to start a second server on it." >&2
   echo "Either stop it, or run the phases by hand against the server that is already there." >&2
   exit 2
 fi
 
-echo "→ starting dev server on port $PORT (local PGlite only)"
-( cd "$APP_DIR" && DATABASE_URL= PGLITE_DATA_DIR="$PGLITE_DATA_DIR" npm run dev -- --port "$PORT" >"$LOG" 2>&1 ) &
-SERVER_PID=$!
+# Phase 2 steps the platform's clock, which today means restarting the server
+# between periods — so it starts and stops the server itself. Phase 1 does not,
+# so this script provides one.
+if [ "$PHASE" = "2" ]; then
+  echo "→ running phase 2 (the harness manages the server; it restarts it to move the clock)"
+  ( cd "$APP_DIR" && DATABASE_URL= node sim/run.mjs --phase 2 --agents "$AGENTS" --seed "$SEED" \
+      --periods "$PERIODS" --base-url "http://127.0.0.1:$PORT" )
+  PHASE1_RC=$?
+else
+  echo "→ starting dev server on port $PORT (local PGlite only)"
+  ( cd "$APP_DIR" && DATABASE_URL= PGLITE_DATA_DIR="$PGLITE_DATA_DIR" npm run dev -- --port "$PORT" >"$LOG" 2>&1 ) &
+  SERVER_PID=$!
 
-for _ in $(seq 1 60); do
-  if curl -fsS "http://127.0.0.1:$PORT/api/health" >/dev/null 2>&1; then break; fi
-  sleep 1
-done
-if ! curl -fsS "http://127.0.0.1:$PORT/api/health" >/dev/null 2>&1; then
-  echo "server never became healthy. Log:" >&2; tail -30 "$LOG" >&2; exit 3
+  for _ in $(seq 1 60); do
+    if curl -fsS "http://127.0.0.1:$PORT/api/health" >/dev/null 2>&1; then break; fi
+    sleep 1
+  done
+  if ! curl -fsS "http://127.0.0.1:$PORT/api/health" >/dev/null 2>&1; then
+    echo "server never became healthy. Log:" >&2; tail -30 "$LOG" >&2; exit 3
+  fi
+  echo "  healthy"
+
+  echo "→ running phase 1"
+  ( cd "$APP_DIR" && node sim/run.mjs --phase 1 --agents "$AGENTS" --seed "$SEED" \
+      --base-url "http://127.0.0.1:$PORT" )
+  PHASE1_RC=$?
+
+  echo "→ stopping the server so the database can be read"
+  cleanup
+  SERVER_PID=""
 fi
-echo "  healthy"
-
-echo "→ running phase 1"
-( cd "$APP_DIR" && node sim/run.mjs --phase 1 --agents "$AGENTS" --seed "$SEED" \
-    --base-url "http://127.0.0.1:$PORT" )
-PHASE1_RC=$?
-
-echo "→ stopping the server so the database can be read"
-cleanup
-SERVER_PID=""
 sleep 1
 
 echo "→ verifying relationship upkeep"
@@ -96,8 +116,8 @@ VERIFY_RC=$?
 
 echo
 if [ "$PHASE1_RC" -eq 0 ] && [ "$VERIFY_RC" -eq 0 ]; then
-  echo "SEMESTER PASS"
+  echo "SEMESTER PASS (phase $PHASE)"
   exit 0
 fi
-echo "SEMESTER FAIL — phase1 rc=$PHASE1_RC verify rc=$VERIFY_RC"
+echo "SEMESTER FAIL (phase $PHASE) — run rc=$PHASE1_RC verify rc=$VERIFY_RC"
 exit 1

@@ -125,7 +125,13 @@ export async function runPhase1({ baseUrl, seed, count, runTag, checks, transcri
         state.seatMap = (term?.cohorts ?? []).map((c) => ({
           name: c.name, band: c.band, capacity: c.capacity, seatsRemaining: c.seats_remaining,
         }));
-        state.termInfo = term ? { slug: term.slug, display: term.display_name, periodHours: term.period_hours, status: term.status } : null;
+        state.termInfo = term
+          ? {
+              id: term.id, slug: term.slug, display: term.display_name,
+              periodHours: term.period_hours, status: term.status,
+              startsAt: term.starts_at, endsAt: term.ends_at, level: term.level,
+            }
+          : null;
         const openCohorts = state.seatMap.filter((c) => c.seatsRemaining > 0);
         log(`  seats: ${state.seatMap.map((c) => `${c.name}(${c.band}) ${c.seatsRemaining}/${c.capacity}`).join(" · ")}`);
         checks.that(openCohorts.length > 0, "at least one cohort has seats before enrolling",
@@ -200,6 +206,18 @@ export async function runPhase1({ baseUrl, seed, count, runTag, checks, transcri
         if (parent) a.repliedTo.push(parent.author_name);
       }
     }
+  }
+
+  // The order agents first posted, per cohort. The final's Q1 can ask for the
+  // roster in "first posting" order, and this is the only record of it an agent
+  // would legitimately have.
+  state.firstPostOrder = {};
+  for (const [, cohort] of state.cohorts) {
+    const seen = [];
+    for (const m of cohort.messages ?? []) {
+      if (!seen.includes(m.author_name)) seen.push(m.author_name);
+    }
+    state.firstPostOrder[cohort.name] = seen;
   }
 
   // read-back + cohort scoping

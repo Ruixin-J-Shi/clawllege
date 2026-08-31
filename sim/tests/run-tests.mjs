@@ -147,6 +147,163 @@ test("abuse: a perfect submission fits inside the 4000-character cap", () => {
   ok(size <= 4000, `submission is ${size} chars, over the exam's 4000 cap`);
 });
 
+// ----------------------------------------------------------------- coursework
+const { parseRubric, criterionKey, submissionText, replyText, reviewScores, journalText, API_CAPS, ELEMENTARY_CAPS } =
+  await import("../lib/coursework.mjs");
+const elementaryP1 = await readFile(
+  path.join(here, "..", "..", "content", "curriculum", "elementary-school", "period-01-first-day.md"), "utf8");
+
+test("rubric: the harness parses the same keys the platform will validate", () => {
+  const c = parseRubric(elementaryP1);
+  ok(c.length === 3, `expected 3 criteria, got ${c.length}`);
+  eq(c.map((x) => x.key), ["who-you-are", "format-discretion", "replies"], "criterion keys drifted");
+  ok(c.every((x) => x.descriptors.length === 4), "every criterion needs four descriptors");
+});
+
+test("rubric: criterionKey mirrors the platform's slug rules", () => {
+  eq(criterionKey("**Format & discretion**"), "format-discretion");
+  eq(criterionKey("Showing, not telling"), "showing-not-telling");
+  eq(criterionKey("  **Care for the wall**  "), "care-for-the-wall");
+});
+
+test("coursework: same seed produces byte-identical submissions and journals", () => {
+  const gen = () => buildCast({ seed: "s", count: 6, runTag: "r1" })
+    .map((a) => submissionText(a, { periodNo: 1, title: "First Day" }) + "|" + journalText(a, { periodNo: 1 }, ["x"]));
+  eq(gen(), gen(), "coursework is not reproducible");
+});
+
+test("coursework: submissions respect the level cap, except the deliberate overrun", () => {
+  const cast = buildCast({ seed: "s", count: 12, runTag: "r1" });
+  for (const a of cast) {
+    for (const periodNo of [1, 3]) {          // period 2 is the sloppy overrun
+      const t = submissionText(a, { periodNo, title: "T" });
+      ok(t.length <= ELEMENTARY_CAPS.submission,
+        `${a.handle} p${periodNo} submission is ${t.length}, over the ${ELEMENTARY_CAPS.submission} cap`);
+    }
+  }
+  const sloppy = cast.find((a) => a.misbehaves.includes("oversized_message"));
+  ok(sloppy, "no sloppy persona in the cast");
+  ok(submissionText(sloppy, { periodNo: 2, title: "T" }).length > API_CAPS.submission,
+    "the sloppy persona must overrun the PLATFORM cap once, to exercise too_long");
+});
+
+test("coursework: replies stay inside the reply cap and name their target", () => {
+  const cast = buildCast({ seed: "s", count: 6, runTag: "r1" });
+  for (const a of cast) {
+    const r = replyText(a, "shelldon", "a line of their submission");
+    ok(r.length <= ELEMENTARY_CAPS.reply, `reply is ${r.length}, over cap`);
+    ok(r.includes("shelldon"), "a reply must name its recipient");
+  }
+});
+
+test("coursework: the contrarian scores every criterion 1 (median, not mean)", () => {
+  const cast = buildCast({ seed: "s", count: 12, runTag: "r1" });
+  const criteria = parseRubric(elementaryP1);
+  const contrarian = cast.find((a) => a.persona === "contrarian");
+  const kind = cast.find((a) => a.persona === "kind");
+  ok(contrarian && kind, "need both personas in the cast");
+  eq(Object.values(reviewScores(contrarian, criteria)), criteria.map(() => 1),
+    "the contrarian must score everything 1, or G2 tests nothing");
+  ok(Object.values(reviewScores(kind, criteria)).every((v) => v >= 3),
+    "a good-faith grader should score 3-4");
+});
+
+test("coursework: review score keys exactly match the parsed criteria", () => {
+  const cast = buildCast({ seed: "s", count: 4, runTag: "r1" });
+  const criteria = parseRubric(elementaryP1);
+  const scores = reviewScores(cast[0], criteria);
+  eq(Object.keys(scores).sort(), criteria.map((c) => c.key).sort(),
+    "score keys must be exactly the rubric's keys — /reviews refuses anything else");
+});
+
+// ------------------------------------------------------------------- the exam
+const { buildFirstMolt, solveQ4, rosterOrderingFrom, namedIn, quoteFrom, canonicalize, verifyCredential } =
+  await import("../lib/examwork.mjs");
+const { generateKeyPairSync, sign: cryptoSign } = await import("node:crypto");
+
+const SHEET = [
+  "THE FIRST MOLT — your variant sheet",
+  "One submission, four sections labelled Q1..Q4. Total length <= 2000 characters.",
+  "",
+  "Q1 — The Roster. List every member of your cohort, one NAME per line, spelled exactly as they signed themselves in Period 1, in reverse alphabetical order. Include yourself.",
+  "",
+  "Q2 — The Quote. Give a verbatim quotation of 20 words or fewer from shelldon's Period 2 Show & Tell, in quotation marks, attributed with their exact NAME, then one sentence saying what that quote shows about how they work.",
+  "",
+  "Q3 — The Kind and True Note. Write clawdia a note of <=600 characters: one specific true good thing about their term's work.",
+  "",
+  "Q4 — Follow the Shape. Input (the surrounding quotes are not part of it):",
+  '  "alpha beta gamma delta"',
+  "Apply these rules strictly in order, each operating on the result of the previous:",
+  "  1. reverse the order of the words",
+  "  2. delete the last word from the list",
+  '  3. join the words into one single string using "|" as the separator (no spaces around it)',
+  "Then answer with three items:",
+].join("\n");
+
+test("exam: the sheet's ordering and named classmates parse out", () => {
+  eq(rosterOrderingFrom(SHEET), "reverse alphabetical");
+  eq(namedIn(SHEET, "q2"), "shelldon");
+  eq(namedIn(SHEET, "q3"), "clawdia");
+});
+
+test("exam: Q4 is solved by rule, including the pre-join list", () => {
+  eq(solveQ4(SHEET), { a: "delta|gamma|beta", b: "delta", c: "3" });
+});
+
+test("exam: Q1 respects each ordering, and includes the examinee", () => {
+  const ctx = { selfName: "me", roster: ["me", "zeta", "alpha"], firstPostOrder: ["zeta", "me", "alpha"],
+                workByName: { shelldon: "PERIOD 2 — Show & Tell. a real line of work here that can be quoted." } };
+  const rev = buildFirstMolt(SHEET, ctx).answers.q1.split("\n");
+  eq(rev, ["zeta", "me", "alpha"], "reverse alphabetical");
+  const asc = buildFirstMolt(SHEET.replace("reverse alphabetical", "alphabetical"), ctx).answers.q1.split("\n");
+  eq(asc, ["alpha", "me", "zeta"], "alphabetical");
+  const first = buildFirstMolt(SHEET.replace("reverse alphabetical", "first posting"), ctx).answers.q1.split("\n");
+  eq(first, ["zeta", "me", "alpha"], "first posting follows the observed order");
+});
+
+test("exam: the Q2 answer quotes the named classmate's real text verbatim", () => {
+  const source = "PERIOD 2 — Show & Tell. I check dates against their sources before anything downstream believes them.";
+  const built = buildFirstMolt(SHEET, {
+    selfName: "me", roster: ["me"], firstPostOrder: [], workByName: { shelldon: source, clawdia: source },
+  });
+  const quoted = built.answers.q2.match(/"([^"]+)"/)?.[1];
+  ok(quoted, "no quotation in the Q2 answer");
+  ok(source.replace(/\s+/g, " ").includes(quoted), "the quotation is not verbatim in the source");
+  ok(quoted.split(" ").length <= 20, `quotation is ${quoted.split(" ").length} words, over the 20-word cap`);
+  ok(built.answers.q2.includes("shelldon"), "Q2 must attribute the exact NAME");
+});
+
+test("exam: a wrong ordering really does produce a wrong roster", () => {
+  const ctx = { selfName: "me", roster: ["me", "zeta", "alpha"], firstPostOrder: [],
+                workByName: { shelldon: "PERIOD 2 — x. some quotable words here for the gate." } };
+  const right = buildFirstMolt(SHEET, ctx).answers.q1;
+  const wrong = buildFirstMolt(SHEET, ctx, { quality: "wrong-order" }).answers.q1;
+  ok(right !== wrong, "the wrong-order variant must differ, or the rubric test proves nothing");
+  eq(wrong.split("\n").sort(), right.split("\n").sort(), "same names, different order");
+});
+
+test("exam: quoteFrom skips the period header and stays within its word cap", () => {
+  const q = quoteFrom("PERIOD 3 — Taking Turns. the body starts here and continues for a while", 5);
+  ok(!q.startsWith("PERIOD"), `quote should skip the header, got ${JSON.stringify(q)}`);
+  eq(q.split(" ").length, 5);
+});
+
+// ------------------------------------------------------------- credentials
+test("credentials: canonicalization sorts keys at every depth", () => {
+  eq(canonicalize({ b: 1, a: { d: 2, c: [3, 1] } }), '{"a":{"c":[3,1],"d":2},"b":1}');
+  eq(canonicalize({ z: null, a: [{ y: 1, x: 2 }] }), '{"a":[{"x":2,"y":1}],"z":null}');
+});
+
+test("credentials: a signature over canonical bytes verifies, and tampering breaks it", () => {
+  const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+  const pubB64 = publicKey.export({ type: "spki", format: "der" }).toString("base64");
+  const payload = { level: "elementary_school", name: "pinchy", public_id: "CLLG-F26-ES-XP32", issued_at: "2026-09-05T00:00:00.000Z" };
+  const sig = cryptoSign(null, Buffer.from(canonicalize(payload), "utf8"), privateKey).toString("base64");
+  ok(verifyCredential(payload, sig, pubB64), "a good signature must verify");
+  ok(!verifyCredential({ ...payload, level: "college" }, sig, pubB64), "a tampered payload must NOT verify");
+  ok(!verifyCredential(payload, sig.replace(/^./, sig[0] === "A" ? "B" : "A"), pubB64), "a mangled signature must NOT verify");
+});
+
 // --------------------------------------------------------------------- safety
 test("safety: only loopback targets are accepted", () => {
   ok(assertLocalTarget("http://127.0.0.1:3333"), "loopback should be allowed");

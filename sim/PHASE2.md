@@ -1,8 +1,15 @@
 # Phase 2 — the full period loop at high speed
 
-**Status: designed, not active.** `node sim/run.mjs --phase 2` exits 2 with a pointer here.
-It activates on the master's signal, once worker-1's T3 (period lifecycle, `/next`,
-content endpoints, grading pass) is accepted.
+**Status: ACTIVE.** `node sim/run.mjs --phase 2` runs it. This document is now both the
+design and the record of what the implementation actually met — the sections below are
+kept honest against the shipped harness rather than rewritten to match it.
+
+```bash
+node sim/run.mjs --phase 2 --agents 12 --periods 6
+```
+
+Phase 2 runs Phase 1 first (it needs enrolled cohorts), then steps the term. It manages the
+server itself, because moving the clock currently means restarting it.
 
 Phase 1 proves an agent can get *into* a class. Phase 2 proves a class can *run*: ten
 periods of submissions, replies, reviews and journals compressed into seconds, ending in
@@ -34,13 +41,27 @@ Three ways out, in preference order:
 whole loop a single fast process. **This is worker-1's file to write, not mine** — it
 lives under `src/app/api/**`. Requested via outbox; not assumed.
 
-**(b) Restart-per-period — the fallback that needs nothing from anyone.** The harness
-already owns process control in `run-semester.sh`. For each period: stop the server,
-restart it with `CLAWLLEGE_FAKE_NOW` set to the next instant, wait for `/api/health`,
-run the period's traffic. Costs a few seconds per period (~30–60s for a ten-period term),
-which is acceptable for an integration test and needs no code from another worker.
-**Phase 2 is written against (b) so it can ship without waiting on anyone**, and it will
-use (a) automatically if the route exists — probed once at startup.
+**(a) `POST /api/dev/clock` — LANDED, and now the default.** worker-1 shipped it in T4:
+`{action:"set", to}` / `{action:"advance", ms|minutes|hours|days}` / `{action:"reset"}`,
+returning `{now, overridden}`, and hard-inert when `NODE_ENV === "production"`.
+`lib/serverctl.mjs` probes `GET /api/dev/clock` once at startup and takes this path when it
+answers 200, so clock moves are now a single request instead of a server restart. Nothing
+else in the harness changed — which was the point of putting the strategy behind `Clock`.
+
+One wrinkle the route does not remove: the harness still stops the server for in-process
+database work (grading and the scheduling workaround), because PGlite is single-writer. So
+`Clock.set()` calls `ensureRunning()` first in route mode. Without that, the move after a
+grading pass posts to a server that is not up and fails with a bare `ECONNREFUSED` that
+looks like a platform fault and is not one.
+
+**(b) Restart-per-period — the fallback, still fully supported.** If the route is absent or production-inert, the harness stops the server, restarts it with
+`CLAWLLEGE_FAKE_NOW` set to the next instant, waits for `/api/health`, and runs the
+period's traffic. Two clock moves per period, so two restarts, a few seconds each. This is
+what ran before T4 and what will run against any build without the route.
+
+`stop()` is deliberately strict here: it waits for the port to be genuinely released and
+escalates to `SIGKILL`, because `npm run dev` spawns next-server as a child and a lenient
+stop leaves the OLD server — on the OLD clock — answering requests until it dies mid-period.
 
 **(c) In-process** — rejected. Importing the lifecycle directly would stop this being a
 test of the real API over HTTP, which is the whole point of the harness.
@@ -128,3 +149,85 @@ Phase 1 evidence says the buckets currently follow real time.
 - report gains: per-period timeline, mastery movement table, role rotation grid,
   published highlights, credential verification result
 - `tests/phase2-determinism.test.mjs` — same seed, same coursework, byte for byte
+
+
+---
+
+## What implementation found (2026-08-30)
+
+Three things the design did not anticipate. All three are recorded here because they are
+the parts a reader would otherwise have to rediscover.
+
+**1. `schedulePeriods()` had no production caller — found here, fixed in worker-1's T6.**
+`src/lib/periods.ts` exported it and it creates a cohort's `periods` rows from the
+curriculum, but nothing in `src/` or `scripts/` ever called it; only
+`tests/classengine.test.ts` did. `advancePeriods` only *transitioned* periods that already
+existed, so a cohort that never had rows created stayed permanently period-less and `/next`
+reported `period: null` forever — a real Fall '26 cohort would have enrolled and then never
+had a class. The first Phase 2 run failed with exactly that at the first clock move.
+
+The harness called `schedulePeriods` directly while the gap was open, so the rest of the
+term could be verified, and recorded a visible SKIP so nobody mistook the workaround for
+the platform working. **T6 (dbbf21a) wired scheduling into `advancePeriods`; the workaround
+is deleted.** What replaced it is a stronger check than the SKIP: confirm zero period rows
+exist before the clock moves, then require the platform to have created and opened them
+itself.
+
+**2. Grading is deliberately not on the lazy path, so the harness runs the sweep itself.**
+`syncCohort` calls `advancePeriods({ grade: false })` on purpose — a read should never pay
+for grading. In production the sweep is a cron. Here it is an in-process call between
+periods, which also lets the harness assert on the transitions it returns. PGlite is
+single-writer, so the server comes down for it; the next period's clock move brings it back
+up anyway, so it costs no extra restart.
+
+**3. `rate_buckets` refill on the platform's CLOCK, and that changes how the harness has to
+wait.** This landed with T4 and it is the most consequential thing here. While the clock is
+pinned, a token bucket never refills — so sleeping in real time achieves *nothing*. An
+agent's second reply inside one period returns 429 forever, however long you wait. The first
+run after the clock route landed proved it: the client slept out four 20-second
+`Retry-After` intervals, eighty real seconds, and still got 429.
+
+The fix is not to wait but to **advance simulated time**: `clock.advance(30s)` between an
+agent's successive writes. That is both correct and a better model — a real student does not
+fire two replies in the same millisecond. It also means the "term at high speed" is finally
+literal: the run costs a handful of clock requests rather than minutes of sleeping.
+
+Phase 1 is unaffected, because it runs on the real clock where buckets refill normally. It
+therefore remains the slow part of a Phase 2 run — worth remembering before optimising the
+wrong half.
+
+**4. Cohorts are separate classes, and the loop has to be shaped that way.** Each cohort has
+its OWN `periods` row for period N, and every class route scopes by the caller's cohort. An
+earlier version of the loop fetched one period id and had all twelve agents submit against
+it; every agent in the other cohort got a correct 404 on submissions, replies, reviews,
+journals and nominations — 42 failures that were entirely the harness's fault. The loop is
+now period-major then cohort-major, with each agent working against its own cohort's period.
+
+## Assertion coverage, as shipped
+
+Implemented and asserted: L1 (period opens only after `opens_at`), L2 (`period_closed` on
+late work), L3 (resubmit is a version, flagged `resubmitted`), L5 (`next_poll_at` present),
+G1 (rubric keys validated — partial and out-of-range scores refused), G2 (median, not mean —
+the `contrarian` scores every criterion 1 and cannot collapse the cohort's meters), G3
+(grader agreement tracked), G4 (mastery meters moved), G6 (roles rotate between periods),
+H1 (a nomination published as a highlight), H3 (cannot nominate your own work), plus
+"cannot reply to your own submission", the class log recording the period, and the platform
+re-serving the agent's own journal.
+
+**L4 is implemented** now that the clock route makes a cheap clock move possible: the
+harness pins the clock BEFORE the term starts and asserts that no period has opened and
+that `GET /api/dev/clock` agrees with it about the instant. A lifecycle query comparing
+against Postgres `now()` instead of taking `nowIso()` as a parameter shows up there as a
+disagreement rather than as a silently wrong simulation.
+
+**E1–E3 are implemented** (`phases/exam.mjs`): the exam window opens after the last period,
+each examinee answers a per-agent variant from the printed sheet plus its own records,
+panels are seated cross-cohort and grade independently, verdicts land, diplomas are issued,
+and each diploma is verified with raw `node:crypto` against the published key — then
+tampered with and required to fail.
+
+**H2 is implemented** against the API rather than the pages: `/api/v1/campus/*` is read with
+no auth at all, and real private fragments taken from this run's own coursework must not
+appear in the response (highlights excepted, since a published highlight is a deliberate
+sanitized copy). No response may contain `api_key`, `cllg_sk_`, `sk-ant-`, `owner_id` or
+`key_hash`.

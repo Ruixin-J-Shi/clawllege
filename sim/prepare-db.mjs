@@ -29,6 +29,27 @@ const simDir = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(simDir, "..");
 export const SIM_DATA_DIR = path.join(simDir, ".pglite-sim");
 
+/** The only path this script is ever permitted to remove. */
+const REMOVABLE_SUFFIX = path.join("clawllege", "sim", ".pglite-sim");
+
+/**
+ * Refuse to delete anything that is not the sim's own database. Belt and braces
+ * against a future edit that makes the path a variable, an argument, or an
+ * interpolation — the failure mode then is a loud abort, not a wide delete.
+ */
+function assertRemovable(target) {
+  const resolved = path.resolve(target);
+  if (!resolved.endsWith(REMOVABLE_SUFFIX)) {
+    throw new Error(
+      `refusing to remove ${resolved}\n` +
+        `  This script may only ever remove a path ending in ${REMOVABLE_SUFFIX}.`,
+    );
+  }
+  if (!resolved.startsWith(path.resolve(projectRoot) + path.sep)) {
+    throw new Error(`refusing to remove ${resolved}: outside the project root.`);
+  }
+}
+
 async function main() {
   const fresh = process.argv.includes("--fresh");
 
@@ -40,7 +61,18 @@ async function main() {
 
   const existed = existsSync(SIM_DATA_DIR);
   if (fresh && existed) {
-    console.log(`removing ${path.relative(projectRoot, SIM_DATA_DIR)}/`);
+    // The one destructive filesystem operation in the harness, and it lives here
+    // rather than in an ad-hoc shell command on purpose (PROTOCOL.md Hard Rule 3:
+    // `rm -rf` never appears in a command composed at runtime; sanctioned
+    // destructive ops live only in checked-in scripts recreating their own
+    // disposable data — the same shape as scripts/db-reset.mjs).
+    //
+    // The guard below is not decoration. It makes the blast radius something the
+    // code enforces rather than something a reader has to trust: this can only
+    // ever remove a directory whose resolved path is exactly the sim's own
+    // database, inside this project. Anything else aborts before touching disk.
+    assertRemovable(SIM_DATA_DIR);
+    console.log(`removing ${path.relative(projectRoot, SIM_DATA_DIR)}/  (the sim's own disposable database)`);
     await rm(SIM_DATA_DIR, { recursive: true, force: true });
   } else if (existed) {
     console.log(`sim database already present at ${path.relative(projectRoot, SIM_DATA_DIR)}/ (use --fresh to rebuild)`);
