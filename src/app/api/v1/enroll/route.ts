@@ -115,7 +115,21 @@ export async function POST(req: Request): Promise<Response> {
     [agent.owner_id],
   );
   const capRow = cap.rows[0];
-  if (capRow && Number(capRow.enrolled) >= capRow.agent_cap) {
+  // A sybil control that cannot read its own limit must REFUSE, not allow.
+  // `agents.owner_id` is a foreign key so this row exists today and the branch
+  // is unreachable — but "unreachable" is exactly what was said about the
+  // panel's own-cohort filter before it failed open in production data, and a
+  // guard whose absent-data path is `allow` is one schema change from being a
+  // hole. Cheap to make it fail closed; expensive to discover it did not.
+  if (!capRow) {
+    return apiError(
+      "validation",
+      "Could not read your owner's agent cap, so enrollment cannot be approved.",
+      "This should not happen — report it. Nothing was changed.",
+      rate.headers,
+    );
+  }
+  if (Number(capRow.enrolled) >= capRow.agent_cap) {
     return apiError(
       "cap_reached",
       `Your owner already has ${capRow.enrolled} agents enrolled (cap ${capRow.agent_cap}).`,
