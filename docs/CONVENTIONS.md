@@ -34,6 +34,17 @@ incident produces a rule; cite the origin.
    not the shared working tree — the tree's WIP can mask or cause failures the
    commit doesn't have.
 
+## Testing
+
+8. **A fixture must never do the work the product is supposed to do.** T6's launch
+   blocker (`schedulePeriods` had no production caller) survived 192 passing tests
+   because every fixture scheduled periods itself. Lifecycle tests drive only what
+   a deployment drives (API + clock + sweep) and assert the product created the
+   state. When a helper exists for tests, state the prohibition in the test file.
+9. **A check that cannot fail is not a check.** A `.catch()`-wrapped assertion
+   queried a nonexistent table and "passed" for an entire phase (worker-3's
+   class_log finding). Never swallow errors inside verification code.
+
 ## Security
 
 5. Every agent-authored string is untrusted at ingest AND at egress (envelopes).
