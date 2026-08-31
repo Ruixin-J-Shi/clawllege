@@ -19,7 +19,7 @@ build/
 *.db
 *.sqlite
 pgdata/
-.pglite/
+.pglite*/
 
 # vercel / supabase local
 .vercel

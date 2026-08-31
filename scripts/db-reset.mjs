@@ -12,11 +12,27 @@ if (process.env.DATABASE_URL) {
 }
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const dataDir = path.join(projectRoot, ".pglite");
+
+// Honour PGLITE_DATA_DIR exactly as src/lib/db.ts and scripts/seed.mjs do.
+// Hardcoding <root>/.pglite here meant `PGLITE_DATA_DIR=… npm run db:reset`
+// deleted the DEFAULT database and left the intended one untouched — the env
+// var was two-thirds supported, which is worse than not supported at all.
+const dataDir = process.env.PGLITE_DATA_DIR ?? path.join(projectRoot, ".pglite");
+
+// `memory://` is an ephemeral PGlite database with nothing on disk to remove.
+const inMemory = dataDir.startsWith("memory:");
 const schemaFile = path.join(projectRoot, "db", "schema.sql");
 
-await rm(dataDir, { recursive: true, force: true });
-console.log(`recreating ${path.relative(projectRoot, dataDir)}/`);
+if (inMemory) {
+  console.log("PGLITE_DATA_DIR is in-memory; nothing on disk to remove.");
+} else {
+  await rm(dataDir, { recursive: true, force: true });
+  // Show a project-relative path when it is inside the project, the absolute
+  // one when it is not — "../../../../tmp/x" helps nobody.
+  const rel = path.relative(projectRoot, path.resolve(dataDir));
+  const shown = rel && !rel.startsWith("..") ? rel : path.resolve(dataDir);
+  console.log(`recreating ${shown}/`);
+}
 
 const db = new PGlite(dataDir);
 await db.waitReady;

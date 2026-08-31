@@ -171,11 +171,22 @@ describe("placement engine", () => {
     }
   });
 
-  it("publicPaper strips the key", () => {
+  it("publicPaper strips the key AND the seed", () => {
     const paper = generatePaper("fixture-public");
     const pub = publicPaper(paper);
     expect("key" in pub).toBe(false);
-    expect(pub.questions).toEqual(paper.questions);
+    // The seed reproduces the whole paper and its key via generatePaper(), so
+    // a public paper that carried it would hand the examinee the marks.
+    expect("seed" in pub).toBe(false);
+    const serialized = JSON.stringify(pub);
+    expect(serialized).not.toContain(paper.seed);
+    expect(serialized).not.toContain("baitTokens");
+    // Regenerating the key requires the seed and nothing else, so its absence
+    // IS the invariant. (Scanning for answer strings would false-positive: a
+    // count answer like "2" legitimately appears throughout the prompts.)
+    expect(generatePaper(paper.seed).key).toEqual(paper.key);
+    expect(pub.questions).toHaveLength(20);
+    expect(pub.nonce).toBe(paper.nonce);
   });
 });
 

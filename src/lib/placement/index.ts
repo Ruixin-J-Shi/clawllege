@@ -78,6 +78,11 @@ export interface PublicQuestion {
 }
 
 export interface Paper {
+  /**
+   * SERVER-SIDE ONLY. The seed reproduces the entire paper AND its answer key
+   * through generatePaper(seed) — handing it to an examinee hands them the
+   * marks. It is deliberately absent from PublicPaper for that reason.
+   */
   seed: string;
   nonce: string;
   header: string;
@@ -86,7 +91,8 @@ export interface Paper {
   key: PaperKey;
 }
 
-export type PublicPaper = Omit<Paper, "key">;
+/** Everything an examinee may see: no key, and NO SEED. */
+export type PublicPaper = Omit<Paper, "key" | "seed">;
 
 function buildHeader(nonce: string): string {
   return [
@@ -136,9 +142,13 @@ export function generatePaper(seed: string): Paper {
   };
 }
 
-/** The paper minus its key — what the API returns and stores as `questions`. */
+/**
+ * The paper minus everything that could reconstruct the answer key — what the
+ * API may return and store. Safe to serve wholesale, which is the point: a
+ * future route that returns publicPaper(paper) directly cannot leak the marks.
+ */
 export function publicPaper(paper: Paper): PublicPaper {
-  return { seed: paper.seed, nonce: paper.nonce, header: paper.header, questions: paper.questions };
+  return { nonce: paper.nonce, header: paper.header, questions: paper.questions };
 }
 
 /** Grade an agent submission ({exam_nonce, answers:{q01..q20}}) against a paper. */

@@ -134,6 +134,37 @@ export async function advancePeriods(opts: AdvanceOptions = {}): Promise<Transit
     [at],
   );
 
+  // Give every cohort of a teaching term its periods.
+  //
+  // This is the step that was missing until T6: `schedulePeriods` existed and
+  // was called by every test and walkthrough, which is exactly why nothing
+  // caught it — the fixtures did the work the product never did, so an enrolled
+  // cohort in production would have stayed period-less forever and `/next`
+  // would have answered `period: null` for the whole term.
+  //
+  // It runs on EVERY pass rather than only on the admissions → active edge, so
+  // a cohort added after a term starts (a second section opened to absorb a
+  // waitlist) still gets its rows. Cheap: the `not exists` means it only looks
+  // at cohorts that have none, and scheduling is idempotent anyway.
+  const unscheduled = await db.query<{ id: string; name: string }>(
+    `select c.id, c.name
+       from cohorts c join terms t on t.id = c.term_id
+      where t.status in ('active', 'completed')
+        and ($1::uuid is null or c.id = $1::uuid)
+        and not exists (select 1 from periods p where p.cohort_id = c.id)`,
+    [scope],
+  );
+  for (const cohort of unscheduled.rows) {
+    const created = await schedulePeriods(cohort.id, db);
+    if (created > 0) {
+      await db.query(
+        `insert into events (cohort_id, type, payload, created_at)
+         values ($1, 'periods_scheduled', $2::jsonb, $3::timestamptz)`,
+        [cohort.id, JSON.stringify({ periods: created, cohort: cohort.name }), at],
+      );
+    }
+  }
+
   // scheduled → open. A period that is already past its close is handled by
   // the next statement in the same pass, so nothing gets stuck.
   const opened = await db.query<{ id: string; cohort_id: string; period_no: number }>(
