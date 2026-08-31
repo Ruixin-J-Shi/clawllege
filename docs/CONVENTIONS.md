@@ -49,6 +49,11 @@ incident produces a rule; cite the origin.
     the broken query because an unrelated exclusion masked it. Keep (or replay)
     the pre-fix reproduction; the delta is what makes the pass meaningful.
     (Origin: panel own-cohort fix verification, 2026-08-30.)
+11. **Integrity rules are asserted over the full population of decisions, not the
+    subset a test observed.** Worker-3's panel violation was timing-intermittent:
+    green runs coexisted with the live bug. The release-gating check reads every
+    decision the platform recorded (all exam_panel_assigned events), not just the
+    ones the harness happened to drive. (Origin: intermittent panel finding, 2026-08-30.)
 
 ## Security
 
