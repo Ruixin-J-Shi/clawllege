@@ -55,10 +55,10 @@ export default function Crest({
         {/* the lobster, displayed */}
         <image
           href="/brand/lobster-256.png"
-          x="43"
-          y="41"
-          width="64"
-          height="94"
+          x="50.6"
+          y="50"
+          width="48.8"
+          height="78"
           preserveAspectRatio="xMidYMid meet"
         />
       </g>
